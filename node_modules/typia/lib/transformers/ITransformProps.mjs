@@ -1,0 +1,2 @@
+
+//# sourceMappingURL=ITransformProps.mjs.map

@@ -1,0 +1,28 @@
+{
+  "name": "agenticatest1",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "NODE_OPTIONS=--no-deprecation node dist/main.js",
+    "start:dev": "cross-env NODE_OPTIONS=--no-deprecation ts-node src/main.ts",
+    "prepare": "ts-patch install"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "ts-node": "^10.9.2",
+    "ts-patch": "^3.3.0",
+    "typescript": "~5.8.3"
+  },
+  "dependencies": {
+    "@agentica/core": "^0.30.3",
+    "@samchon/openapi": "^4.5.0",
+    "dotenv": "^17.2.0",
+    "openai": "^5.9.0",
+    "typia": "^9.5.0"
+  }
+}

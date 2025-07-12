@@ -1,0 +1,1 @@
+{"version":3,"file":"_isFormatDate.mjs","sources":["../../src/functional/_isFormatDate.ts"],"sourcesContent":["export const _isFormatDate = (str: string): boolean => FORMAT.test(str);\n\nconst FORMAT = /^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/;\n"],"names":["_isFormatDate","str","FORMAT","test"],"mappings":"AAAO,MAAMA,gBAAiBC,OAAyBC,OAAOC,KAAKF;;AAEnE,MAAMC,SAAS;;"}

@@ -1,0 +1,30 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.OpenApiIntegerValidator = void 0;
+var OpenApiIntegerValidator;
+(function (OpenApiIntegerValidator) {
+    OpenApiIntegerValidator.validate = (ctx) => {
+        if (typeof ctx.value !== "number" || Math.floor(ctx.value) !== ctx.value)
+            return ctx.report(ctx);
+        return [
+            ctx.schema.minimum !== undefined
+                ? ctx.schema.exclusiveMinimum
+                    ? ctx.value > ctx.schema.minimum ||
+                        ctx.report(Object.assign(Object.assign({}, ctx), { expected: `number & Type<"int32"> & ExclusiveMinimum<${ctx.schema.minimum}>` }))
+                    : ctx.value >= ctx.schema.minimum ||
+                        ctx.report(Object.assign(Object.assign({}, ctx), { expected: `number & Type<"int32"> & Minimum<${ctx.schema.minimum}>` }))
+                : true,
+            ctx.schema.maximum !== undefined
+                ? ctx.schema.exclusiveMaximum
+                    ? ctx.value < ctx.schema.maximum ||
+                        ctx.report(Object.assign(Object.assign({}, ctx), { expected: `number & Type<"int32"> & ExclusiveMaximum<${ctx.schema.maximum}>` }))
+                    : ctx.value <= ctx.schema.maximum ||
+                        ctx.report(Object.assign(Object.assign({}, ctx), { expected: `number & Type<"int32"> & Maximum<${ctx.schema.maximum}>` }))
+                : true,
+            ctx.schema.multipleOf !== undefined
+                ? ctx.value % ctx.schema.multipleOf === 0 ||
+                    ctx.report(Object.assign(Object.assign({}, ctx), { expected: `number & Type<"int32"> & MultipleOf<${ctx.schema.multipleOf}>` }))
+                : true,
+        ].every((v) => v);
+    };
+})(OpenApiIntegerValidator || (exports.OpenApiIntegerValidator = OpenApiIntegerValidator = {}));

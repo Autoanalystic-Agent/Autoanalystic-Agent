@@ -1,0 +1,2 @@
+
+//# sourceMappingURL=IMetadataNative.mjs.map

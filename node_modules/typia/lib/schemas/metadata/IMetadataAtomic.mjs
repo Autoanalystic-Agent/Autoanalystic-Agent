@@ -1,0 +1,2 @@
+
+//# sourceMappingURL=IMetadataAtomic.mjs.map

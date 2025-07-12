@@ -1,0 +1,2 @@
+
+//# sourceMappingURL=IProtobufPropertyType.mjs.map
