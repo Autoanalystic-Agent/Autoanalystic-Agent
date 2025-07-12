@@ -18,7 +18,7 @@ async function main() {
   const agent = new Agentica({
     model: "chatgpt",
     vendor: {
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       api: openai,
     },
     // Controller에 Tool을 입력할 수 있다.
