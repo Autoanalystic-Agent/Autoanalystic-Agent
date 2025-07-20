@@ -21,6 +21,7 @@
   "dependencies": {
     "@agentica/core": "^0.30.3",
     "@samchon/openapi": "^4.5.0",
+    "csv-parse": "^6.1.0",
     "dotenv": "^17.2.0",
     "openai": "^5.9.0",
     "typia": "^9.5.0"

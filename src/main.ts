@@ -1,9 +1,11 @@
 import { Agentica } from "@agentica/core";
 import { OpenAI } from "openai";
 import { DateTool, WeatherTool } from "./tools/tools";
+import { LoadDataTool } from "./tools/loadDataTool";
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
+import { BasicStatsTool } from "./tools/basicStatsTool";
 
 // .env 파일을 불러온다.
 dotenv.config();
@@ -35,6 +37,18 @@ async function main() {
         application: typia.llm.application<WeatherTool, "chatgpt">(),
         execute: new WeatherTool(),
       },
+      {
+        name: "Load CSV Tool",
+        protocol: "class",
+        application: typia.llm.application<LoadDataTool, "chatgpt">(),
+        execute: new LoadDataTool(),
+      },
+      {
+        name: "Basic Stats Tool",
+        protocol: "class",
+        application: typia.llm.application<BasicStatsTool, "chatgpt">(),
+        execute: new BasicStatsTool(),
+      }
     ],
   });
 

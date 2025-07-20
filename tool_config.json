@@ -1,0 +1,8 @@
+[
+  {
+    "name": "loadData",
+    "description": "CSV 파일을 불러와 문자열로 반환합니다.",
+    "module": "./src/tools/loadDataTool",
+    "function": "loadData"
+  }
+]
