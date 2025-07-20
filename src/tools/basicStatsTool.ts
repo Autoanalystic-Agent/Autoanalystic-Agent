@@ -5,17 +5,17 @@ import * as csv from "csv-parse/sync";
 
 export class BasicStatsTool {
   public async summarize({ // 통게 요약 : csv파일에서 특정 컬럼을 찾아 mean, max, min 동계를 반환
-    filePath = "uploads/iris.csv",
+    filePath,
     column, //= "sepal_length",
   }: {
-    filePath?: string;
+    filePath: string;
     column?: string;
   }): Promise<string> {
+    if (!filePath?.trim()) {
+      return `파일 경로가 제공되지 않았습니다.`;
+    }
 
-
-    const resolvedPath = filePath?.trim()
-      ? path.resolve(filePath)
-      : path.resolve("uploads/iris.csv");
+    const resolvedPath = path.resolve(filePath)
 
     let fileContent: string;
     try {
@@ -83,15 +83,17 @@ export class BasicStatsTool {
   }
 
   public async getColumns({ // CSV 파일에서 컬럼 이름 목록을 추출하여 반환
-    filePath = "uploads/iris.csv",
+    filePath,
   }: {
-    filePath?: string;
+    filePath: string;  // 기본값 제거
   }): Promise<string[]> {
+    if (!filePath?.trim()) {
+      return [`파일 경로가 제공되지 않았습니다.`];
+    }
 
 
-    const resolvedPath = filePath?.trim()
-      ? path.resolve(filePath)
-      : path.resolve("uploads/iris.csv");
+    const resolvedPath = path.resolve(filePath)
+
 
     let fileContent: string;
     try {

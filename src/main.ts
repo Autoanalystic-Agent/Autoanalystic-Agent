@@ -2,10 +2,13 @@ import { Agentica } from "@agentica/core";
 import { OpenAI } from "openai";
 import { DateTool, WeatherTool } from "./tools/tools";
 import { LoadDataTool } from "./tools/loadDataTool";
+import { SummarizeTool } from "./tools/summarize_tool";
+
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
 import { BasicStatsTool } from "./tools/basicStatsTool";
+import fs from "fs";
 
 // .env 파일을 불러온다.
 dotenv.config();
@@ -16,6 +19,10 @@ async function main() {
     apiKey: process.env.OPENAI_API_KEY,
   });
 
+  const args = process.argv.slice(2);
+  const userMessage = args[0] || "";
+  const csvFilePath = args[1]; // 업로드된 CSV 파일명 (optional)
+
   // Agentica를 사용하여 agent를 생성한다.
   const agent = new Agentica({
     model: "chatgpt",
@@ -25,24 +32,18 @@ async function main() {
     },
     // Controller에 Tool을 입력할 수 있다.
     controllers: [
-      {
-        name: "Date Tool", // 컨트롤러 이름 설정
-        protocol: "class",  // 형식 설정. http, class가 존재한다.
-        application: typia.llm.application<DateTool, "chatgpt">(), // OpenAI Function Schema가 들어간다.
-        execute: new DateTool(), // OpenAI Function Schema의 구현체가 들어간다. application에 입력된 OpenAI Function Schema를 토대로, excute의 구현체의 함수를 실행한다.
-      },
-      {
-        name: "Weather Tool",
-        protocol: "class",
-        application: typia.llm.application<WeatherTool, "chatgpt">(),
-        execute: new WeatherTool(),
-      },
-      {
-        name: "Load CSV Tool",
-        protocol: "class",
-        application: typia.llm.application<LoadDataTool, "chatgpt">(),
-        execute: new LoadDataTool(),
-      },
+      // {
+      //   name: "Summarize Tool",
+      //   protocol: "class",
+      //   application: typia.llm.application<SummarizeTool, "chatgpt">(),
+      //   execute: new SummarizeTool(),
+      // },
+      // {
+      //   name: "Load CSV Tool",
+      //   protocol: "class",
+      //   application: typia.llm.application<LoadDataTool, "chatgpt">(),
+      //   execute: new LoadDataTool(),
+      // },
       {
         name: "Basic Stats Tool",
         protocol: "class",
@@ -52,34 +53,66 @@ async function main() {
     ],
   });
 
-  // 터미널에서 대화를 주고받기 위한 readline interface 생성
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  // CSV파일명이 있으면 채팅
 
-  // Agent와 대화하는 함수.
-  const conversation = () => {
-    rl.question("User Input (exit: q) : ", async (input) => {
-      // q를 입력하면 대화가 종료.
-      if (input === "q") {
-        rl.close();
-        return;
-      }
+   // 터미널에서 대화를 주고받기 위한 readline interface 생성
+  // const rl = readline.createInterface({
+  //   input: process.stdin,
+  //   output: process.stdout,
+  // });
+
+  // // Agent와 대화하는 함수.
+  // const conversation = () => {
+  //   rl.question("User Input (exit: q) : ", async (input) => {
+  //     // q를 입력하면 대화가 종료.
+  //     if (input === "q") {
+  //       rl.close();
+  //       return;
+  //     }
 		
-      const answers = await agent.conversate(input);
+  //     const answers = await agent.conversate(input);
 
-      // Agent의 답변을 console.log한다.
-      answers.forEach((answer) => {
-        console.log(JSON.stringify(answer, null, 2));
-      });
+  //     // Agent의 답변을 console.log한다.
+  //     answers.forEach((answer) => {
+  //       console.log(JSON.stringify(answer, null, 2));
+  //     });
 
-      // 대화를 지속할 수 있도록 재귀호출.
-      conversation();
-    });
-  };
+  //     // 대화를 지속할 수 있도록 재귀호출.
+  //     conversation();
+  //   });
+  // };
 
-  conversation();
+  let csvContent: string | undefined = undefined;
+  if (csvFilePath) {
+    try {
+      csvContent = fs.readFileSync(csvFilePath, "utf-8");
+      console.log(`CSV 파일 읽음: ${csvFilePath}`);
+    } catch (e) {
+      console.error(`CSV 파일 읽기 실패: ${e}`);
+    }
+  }
+
+  // userMessage + csvContent를 agent에 전달 (임의 구조)
+  // 필요하면 SummarizeTool에 csvContent 넘기도록 메시지 구성
+  let prompt = userMessage;
+  if (csvContent) {
+    prompt += `\n\n[CSV 파일 내용]${csvContent}`;
+    //prompt += `\n\n[CSV 파일경로]${csvFilePath}`;
+  }
+
+  // conversate 호출
+  const answers = await agent.conversate(prompt);
+
+  // 결과 출력 (JSON 형태)
+  //console.log(JSON.stringify({ answers }, null, 2));
+  answers.forEach((answer) => {
+  if ("text" in answer) {
+    console.log(answer.text);
+  }
+});
+
+
+
 }
 
 main().catch(console.error);
