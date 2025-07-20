@@ -55,7 +55,9 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(await file.read())
     # 업로드 후 루트 페이지로 리다이렉트 (파일명 쿼리 전달)
+    print("업로드된 파일 이름:", file.filename)
     return RedirectResponse(url=f"/?filename={file.filename}", status_code=303)
+    #return {"filename": file.filename}
 
 
 @app.post("/chat/", response_class=HTMLResponse)
@@ -72,6 +74,7 @@ async def chat(
         if filename:
             file_path = os.path.join(UPLOAD_DIR, filename)
             cmd.append(file_path)
+            print(file_path)
 
 
         proc = subprocess.Popen(

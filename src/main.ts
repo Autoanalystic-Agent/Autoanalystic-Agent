@@ -96,20 +96,20 @@ async function main() {
   // 필요하면 SummarizeTool에 csvContent 넘기도록 메시지 구성
   let prompt = userMessage;
   if (csvContent) {
-    prompt += `\n\n[CSV 파일 내용]${csvContent}`;
-    //prompt += `\n\n[CSV 파일경로]${csvFilePath}`;
+    //prompt += `\n\n[CSV 파일 내용]${csvContent}`;
+    prompt += `\n\n[CSV 파일경로]${csvFilePath}`;
   }
 
   // conversate 호출
   const answers = await agent.conversate(prompt);
 
   // 결과 출력 (JSON 형태)
-  //console.log(JSON.stringify({ answers }, null, 2));
-  answers.forEach((answer) => {
-  if ("text" in answer) {
-    console.log(answer.text);
-  }
-});
+  console.log(JSON.stringify({ answers }, null, 2));
+  // answers.forEach((answer) => {
+  // if ("text" in answer) {
+  //   console.log(answer.text);
+  // }
+  // });
 
 
 
