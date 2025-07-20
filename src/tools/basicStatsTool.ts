@@ -15,7 +15,7 @@ export class BasicStatsTool {
       return `파일 경로가 제공되지 않았습니다.`;
     }
     
-    const defaultDir = path.join(process.cwd(), "src", "uploads");
+    const defaultDir = path.join(process.cwd(), "uploads");
     const cleanedFilePath = filePath.replace(/^.*uploads[\\/]/, "");
     const resolvedPath = path.join(defaultDir, cleanedFilePath);
 
@@ -97,7 +97,7 @@ export class BasicStatsTool {
     }
 
 
-    const defaultDir = path.join(process.cwd(), "src", "uploads");
+    const defaultDir = path.join(process.cwd(), "uploads");
     const cleanedFilePath = filePath.replace(/^.*uploads[\\/]/, "");
     const resolvedPath = path.join(defaultDir, cleanedFilePath);
 

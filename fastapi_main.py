@@ -7,7 +7,7 @@ import os, subprocess, csv, json
 
 app = FastAPI()
 
-UPLOAD_DIR = "src/uploads"
+UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Templates 설정
