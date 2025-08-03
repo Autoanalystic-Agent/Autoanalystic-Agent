@@ -105,10 +105,7 @@ async function main() {
         const workflow = new WorkflowTool();
         const result = await workflow.run({filePath: csvFilePath});
 
-        // 출력 확인 부분 추가
-        console.log("\n [CSV 분석 결과]");
-        console.log("- 선택된 컬럼:", result.selectedColumns);
-        console.log("- 추천된 페어:", result.recommendedPairs);
+        
         return;
       } catch (e) {
         console.error(`❌ CSV 파일 읽기 실패: ${e}`);
