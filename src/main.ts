@@ -1,13 +1,11 @@
 import { Agentica } from "@agentica/core";
 import { OpenAI } from "openai";
-import { DateTool, WeatherTool } from "./tools/tools";
-import { LoadDataTool } from "./tools/loadDataTool";
-import { SummarizeTool } from "./tools/summarize_tool";
 
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
 import { BasicStatsTool } from "./tools/basicStatsTool";
+import { PreprocessingTool } from "./tools/PreprocessingTool";
 import fs from "fs";
 
 // .env 파일을 불러온다.
@@ -32,23 +30,17 @@ async function main() {
     },
     // Controller에 Tool을 입력할 수 있다.
     controllers: [
-      // {
-      //   name: "Summarize Tool",
-      //   protocol: "class",
-      //   application: typia.llm.application<SummarizeTool, "chatgpt">(),
-      //   execute: new SummarizeTool(),
-      // },
-      // {
-      //   name: "Load CSV Tool",
-      //   protocol: "class",
-      //   application: typia.llm.application<LoadDataTool, "chatgpt">(),
-      //   execute: new LoadDataTool(),
-      // },
       {
         name: "Basic Stats Tool",
         protocol: "class",
         application: typia.llm.application<BasicStatsTool, "chatgpt">(),
         execute: new BasicStatsTool(),
+      },
+      {
+        name: "Preprocessing Tool",
+        protocol: "class",
+        application: typia.llm.application<PreprocessingTool, "chatgpt">(),
+        execute: new PreprocessingTool(),
       }
     ],
   });
