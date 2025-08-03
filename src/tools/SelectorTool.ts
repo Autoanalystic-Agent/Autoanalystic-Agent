@@ -20,6 +20,12 @@ export class SelectorTool {
   }): Promise<{
     selectedColumns: string[];
     recommendedPairs: { column1: string; column2: string }[];
+    preprocessingRecommendations: {
+      column: string;
+      fillna: "drop" | "mean" | "mode";
+      normalize?: "minmax" | "zscore";
+      encoding?: "label" | "onehot";
+    }[];
   }> {
     const columnNames = columnStats.map((c) => c.column);
     const selectedColumns = columnNames.filter(
@@ -37,14 +43,37 @@ export class SelectorTool {
         }
       }
     }
+    const preprocessingRecommendations = columnStats.map((stat) => {
+      const isNumeric = stat.dtype === "number";
+
+      const fillna: "drop" | "mean" | "mode" =
+        stat.missing > 0 ? (isNumeric ? "mean" : "mode") : "drop";
+
+      const normalize: "minmax" | "zscore" | undefined =
+        isNumeric ? (stat.std && stat.std > 1 ? "zscore" : "minmax") : undefined;
+
+      const encoding: "label" | "onehot" | undefined =
+        !isNumeric ? (stat.unique <= 10 ? "onehot" : "label") : undefined;
+
+      return {
+        column: stat.column,
+        fillna,
+        normalize,
+        encoding,
+      };
+    });
+
+
     //  로그 확인
     console.log(`\n [SelectorTool 결과]:`);
     console.log("- 선택된 컬럼:", selectedColumns);
     console.log("- 추천된 페어:", recommendedPairs);
+    console.log("- 전처리 추천:", preprocessingRecommendations);
 
     return {
       selectedColumns,
       recommendedPairs,
+      preprocessingRecommendations,
     };
   }
 }

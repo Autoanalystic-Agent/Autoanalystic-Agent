@@ -17,6 +17,12 @@ export class WorkflowTool {
     }[];
     selectedColumns: string[];
     recommendedPairs: { column1: string; column2: string }[];
+    preprocessingRecommendations: {
+      column: string;
+      fillna: "drop" | "mean" | "mode";
+      normalize?: "minmax" | "zscore";
+      encoding?: "label" | "onehot";
+    }[];
   }> {
     if (!filePath) {
       throw new Error("파일 경로(filePath)는 필수입니다.");
@@ -30,7 +36,10 @@ export class WorkflowTool {
 
     //  2. 컬럼 추천 도구 실행
     const selector = new SelectorTool();
-    const { selectedColumns, recommendedPairs } = await selector.run({ columnStats });
+    const { selectedColumns, 
+        recommendedPairs, 
+        preprocessingRecommendations, 
+    } = await selector.run({ columnStats });
 
 
 
@@ -41,6 +50,7 @@ export class WorkflowTool {
       columnStats,
       selectedColumns,
       recommendedPairs,
+      preprocessingRecommendations,
     };
   }
 }
