@@ -1,5 +1,12 @@
 import { Agentica } from "@agentica/core";
 import { OpenAI } from "openai";
+import { DateTool, WeatherTool } from "./tools/tools";
+import { LoadDataTool } from "./tools/loadDataTool";
+import { SummarizeTool } from "./tools/summarize_tool";
+import { BasicAnalysisTool } from "./tools/BasicAnalysisTool";
+import { SelectorTool } from "./tools/SelectorTool";
+import { WorkflowTool } from "./tools/WorkflowTool";
+
 
 import typia from "typia";
 import readline from "readline";
@@ -10,101 +17,120 @@ import fs from "fs";
 
 // .env 파일을 불러온다.
 dotenv.config();
-
+// main 함수에서 실행 모드를 결정
 async function main() {
-  // OpenAI를 정의
+  const isInteractive = process.argv.includes("--interactive");
+
+  // OpenAI API 설정
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  const args = process.argv.slice(2);
-  const userMessage = args[0] || "";
-  const csvFilePath = args[1]; // 업로드된 CSV 파일명 (optional)
-
-  // Agentica를 사용하여 agent를 생성한다.
+  // Agentica 에이전트 정의
   const agent = new Agentica({
     model: "chatgpt",
     vendor: {
       model: "gpt-4.1-mini",
       api: openai,
     },
-    // Controller에 Tool을 입력할 수 있다.
     controllers: [
+      // {
+      //   name: "Basic Stats Tool",
+      //   protocol: "class",
+      //   application: typia.llm.application<BasicStatsTool, "chatgpt">(),
+      //   execute: new BasicStatsTool(),
+      // },
       {
-        name: "Basic Stats Tool",
+        name: "기초 분석 도구",
         protocol: "class",
-        application: typia.llm.application<BasicStatsTool, "chatgpt">(),
-        execute: new BasicStatsTool(),
+        application: typia.llm.application<BasicAnalysisTool, "chatgpt">(),
+        execute: new BasicAnalysisTool(),
       },
       {
-        name: "Preprocessing Tool",
+        name: "컬럼 선택 도구",
         protocol: "class",
-        application: typia.llm.application<PreprocessingTool, "chatgpt">(),
-        execute: new PreprocessingTool(),
-      }
+        application: typia.llm.application<SelectorTool, "chatgpt">(),
+        execute: new SelectorTool(),
+      },
     ],
   });
 
-  // CSV파일명이 있으면 채팅
+  // 대화형 모드
+  if (isInteractive) {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
 
-   // 터미널에서 대화를 주고받기 위한 readline interface 생성
-  // const rl = readline.createInterface({
-  //   input: process.stdin,
-  //   output: process.stdout,
-  // });
+    const conversation = () => {
+      rl.question("User Input (exit: q) : ", async (input) => {
+        if (input === "q") {
+          rl.close();
+          return;
+        }
 
-  // // Agent와 대화하는 함수.
-  // const conversation = () => {
-  //   rl.question("User Input (exit: q) : ", async (input) => {
-  //     // q를 입력하면 대화가 종료.
-  //     if (input === "q") {
-  //       rl.close();
-  //       return;
-  //     }
-		
-  //     const answers = await agent.conversate(input);
+        try {
+          const answers = await agent.conversate(input);
+          console.log("\n✅ Agentica 응답 전체(JSON):");
+          console.log(JSON.stringify(answers, null, 2));
 
-  //     // Agent의 답변을 console.log한다.
-  //     answers.forEach((answer) => {
-  //       console.log(JSON.stringify(answer, null, 2));
-  //     });
+          for (const answer of answers) {
+            if ("text" in answer) {
+              console.log("\n🧠 Agent 응답 메시지:");
+              console.log(answer.text);
+            }
+          }
+        } catch (err) {
+          console.error("❌ Agent 처리 중 오류:", err);
+        }
 
-  //     // 대화를 지속할 수 있도록 재귀호출.
-  //     conversation();
-  //   });
-  // };
+        conversation(); // 재귀 호출
+      });
+    };
 
-  let csvContent: string | undefined = undefined;
-  if (csvFilePath) {
-    try {
-      csvContent = fs.readFileSync(csvFilePath, "utf-8");
-      console.log(`CSV 파일 읽음: ${csvFilePath}`);
-    } catch (e) {
-      console.error(`CSV 파일 읽기 실패: ${e}`);
+    conversation();
+  } 
+  else {
+    // 기본 모드: 명령줄 인자 실행
+    const args = process.argv.slice(2);
+    const userMessage = args[0] || "";
+    const csvFilePath = args[1];
+
+    let csvContent: string | undefined = undefined;
+    if (csvFilePath) {
+      try {
+        csvContent = fs.readFileSync(csvFilePath, "utf-8");
+        console.log(`📁 CSV 파일 읽음: ${csvFilePath}`);
+
+        // workflow 부분 추가
+        const workflow = new WorkflowTool();
+        const result = await workflow.run({filePath: csvFilePath});
+
+        
+        return;
+      } catch (e) {
+        console.error(`❌ CSV 파일 읽기 실패: ${e}`);
+        return;
+      }
+    }
+
+    // let prompt = userMessage;
+    // if (csvContent) {
+    //   prompt += `\n\n[CSV 파일경로]${csvFilePath}`;
+    // }
+
+    const answers = await agent.conversate(userMessage);
+
+    console.log("\n✅ Agentica 응답 전체(JSON):");
+    console.log(JSON.stringify(answers, null, 2));
+
+    for (const answer of answers) {
+      if ("text" in answer) {
+        console.log("\n🧠 Agent 응답 메시지:");
+        console.log(answer.text);
+      }
     }
   }
-
-  // userMessage + csvContent를 agent에 전달 (임의 구조)
-  // 필요하면 SummarizeTool에 csvContent 넘기도록 메시지 구성
-  let prompt = userMessage;
-  if (csvContent) {
-    //prompt += `\n\n[CSV 파일 내용]${csvContent}`;
-    prompt += `\n\n[CSV 파일경로]${csvFilePath}`;
-  }
-
-  // conversate 호출
-  const answers = await agent.conversate(prompt);
-
-  // 결과 출력 (JSON 형태)
-  console.log(JSON.stringify({ answers }, null, 2));
-  // answers.forEach((answer) => {
-  // if ("text" in answer) {
-  //   console.log(answer.text);
-  // }
-  // });
-
-
-
 }
 
 main().catch(console.error);
