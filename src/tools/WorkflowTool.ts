@@ -1,9 +1,10 @@
 
 import { BasicAnalysisTool } from "./BasicAnalysisTool";
 import { SelectorTool } from "./SelectorTool";
+import { VisualizationTool } from "./VisualizationTool";
 
 export class WorkflowTool {
-  static readonly description = "CSV 파일 경로를 받아 통계 분석 및 컬럼 추천을 자동 수행합니다.";
+  static readonly description = "CSV 파일 경로를 받아 통계 분석 및 컬럼 추천, 모델 추천을 자동 수행합니다.";
 
   public async run({ filePath }: { filePath: string }): Promise<{
     filePath: string;
@@ -19,10 +20,25 @@ export class WorkflowTool {
     recommendedPairs: { column1: string; column2: string }[];
     preprocessingRecommendations: {
       column: string;
-      fillna: "drop" | "mean" | "mode";
+      fillna?: "drop" | "mean" | "mode";
       normalize?: "minmax" | "zscore";
       encoding?: "label" | "onehot";
     }[];
+        targetColumn: string;
+    problemType: "regression" | "classification";
+    mlModelRecommendation: {
+      model: string;
+      score: number;
+      reason: string;
+      params: Record<string, any>;
+      alternatives: {
+        model: string;
+        score: number;
+        reason: string;
+        params: Record<string, any>;
+      }[];
+    };
+    chartPaths: string[];
   }> {
     if (!filePath) {
       throw new Error("파일 경로(filePath)는 필수입니다.");
@@ -36,11 +52,24 @@ export class WorkflowTool {
 
     //  2. 컬럼 추천 도구 실행
     const selector = new SelectorTool();
-    const { selectedColumns, 
-        recommendedPairs, 
-        preprocessingRecommendations, 
+    const {
+      selectedColumns,
+      recommendedPairs,
+      preprocessingRecommendations,
+      targetColumn,
+      problemType,
+      mlModelRecommendation,
     } = await selector.run({ columnStats });
 
+    // 3. 시각화 도구 실행
+    const visualizer = new VisualizationTool();
+    const chartPaths = await visualizer.run({
+      filePath,
+      selectorResult: {
+        selectedColumns,
+        recommendedPairs,
+      },
+    });
 
 
     //  3. 결과 반환
@@ -51,6 +80,10 @@ export class WorkflowTool {
       selectedColumns,
       recommendedPairs,
       preprocessingRecommendations,
+      targetColumn,
+      problemType,
+      mlModelRecommendation,
+      chartPaths,
     };
   }
 }
