@@ -4,10 +4,16 @@ import { parse } from "csv-parse/sync";
 
 type Data = Record<string, string | number>[];
 
+export interface PreprocessingRequest {
+  filePath: string; 
+  recommendations: PreprocessingRecommendation[];
+}
+
+export type PreprocessingResponse = string[];
+
 function mean(values: number[]): number {
   if (values.length === 0) return NaN;
-  const sum = values.reduce((a, b) => a + b, 0);
-  return sum / values.length;
+  return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
 function std(values: number[]): number {
@@ -30,165 +36,106 @@ function quantileSeq(values: number[], q: number): number {
   }
 }
 
+export interface PreprocessingRecommendation {
+  column: string;
+  fillna?: "drop" | "mean" | "mode";
+  normalize?: "minmax" | "zscore";
+  encoding?: "label" | "onehot";
+}
+
 export class PreprocessingTool {
   private data: Data = [];
 
-  public async loadData(input: { filePath: string }): Promise<string> {
-    const { filePath } = input;
-    const defaultDir = path.join(process.cwd(), "uploads");
-    const cleanedFilePath = filePath.replace(/^.*uploads[\\/]/, "");
-    const resolvedPath = path.join(defaultDir, cleanedFilePath);
+  private handleMissingColumn(params: { column: string; strategy: "drop" | "mean" | "mode" }): string {
+    const { column, strategy } = params;
+    let missingCount = 0;
 
-    try {
-      const file = await fs.readFile(resolvedPath, "utf-8");
-      const records = parse(file, {
-        columns: true,
-        skip_empty_lines: true,
-      }) as Data;
-
-      this.data = records;
-      return "CSV 파일 로딩 성공";
-    } catch (err) {
-      return `파일을 읽을 수 없습니다: ${(err as Error).message}`;
-    }
-  }
-
-  // drop일 때는 행 개수 세고, fill일 때는 비어있는 셀의 개수를 셈
-  public handleMissing(params: { strategy: "drop" | "mean" | "mode" }): string {
-  const { strategy } = params;
-  let missingCount = 0;
-
-  if (strategy === "drop") {
-    missingCount = this.data.reduce((count, row) => {
-      const hasMissing = Object.values(row).some(v => v === null || v === '');
-      return count + (hasMissing ? 1 : 0);
-    }, 0);
-
-    this.data = this.data.filter(row =>
-      Object.values(row).every(v => v !== null && v !== '')
-    );
-  } else if (strategy === "mean" || strategy === "mode") {
-    // 각 컬럼별로 결측치 개수 파악
-    const columns = Object.keys(this.data[0] || {});
-    const fillValues: { [key: string]: number | string } = {};
-
-    for (const col of columns) {
+    if (strategy === "drop") {
+      missingCount = this.data.reduce((count, row) => {
+        const val = row[column];
+        return count + (val === null || val === "" ? 1 : 0);
+      }, 0);
+      this.data = this.data.filter(row => row[column] !== null && row[column] !== "");
+    } 
+    else {
       const colValues = this.data
-        .map(row => row[col])
-        .filter(v => v !== null && v !== '');
-
-      if (colValues.length === 0) continue;
+        .map(row => row[column])
+        .filter(v => v !== null && v !== "");
+      if (colValues.length === 0) return `컬럼 ${column}: 결측치가 없거나 데이터 없음`;
 
       const parsedValues = colValues
-        .map(v => typeof v === 'string' ? parseFloat(v) : v)
+        .map(v => typeof v === "string" ? parseFloat(v) : v)
         .filter(v => !isNaN(v));
 
-      if (parsedValues.length === 0) continue;
+      if (parsedValues.length === 0) return `컬럼 ${column}: 숫자형 데이터 없음`;
 
+      let fillValue: number | string;
       if (strategy === "mean") {
-        fillValues[col] = mean(parsedValues);
-      } else if (strategy === "mode") {
-        const freq: { [key: string]: number } = {};
+        fillValue = mean(parsedValues);
+      } else {
+        const freq: Record<string, number> = {};
         for (const v of colValues) {
           const key = String(v);
           freq[key] = (freq[key] || 0) + 1;
         }
-        fillValues[col] = Object.entries(freq).reduce((a, b) => a[1] >= b[1] ? a : b)[0];
+        fillValue = Object.entries(freq).reduce((a, b) => a[1] >= b[1] ? a : b)[0];
       }
-    }
 
-    this.data = this.data.map(row => {
-      const newRow: { [key: string]: string | number } = {};
-      for (const key in row) {
-        const val = row[key];
-        if (val === null || val === '') {
-          missingCount += 1;
-          newRow[key] = fillValues[key] ?? 0;
-        } else {
-          newRow[key] = val;
+      this.data = this.data.map(row => {
+        if (row[column] === null || row[column] === "") {
+          missingCount++;
+          row[column] = fillValue;
         }
-      }
-      return newRow;
-    });
-  }
-
-  return `결측치 처리 완료: ${strategy}. 처리된 결측치 개수: ${missingCount}개`;
-}
-
-
-  public handleOutliers(input: { columns: string[] }): string {
-    const { columns } = input;
-    for (const col of columns) {
-      const values = this.data
-        .map((row) => {
-          const raw = row[col];
-          const val = typeof raw === "string" ? parseFloat(raw) : raw;
-          return isNaN(val) ? NaN : val;
-        })
-        .filter((v) => !isNaN(v));
-
-      const q1 = quantileSeq(values, 0.25);
-      const q3 = quantileSeq(values, 0.75);
-      const iqr = q3 - q1;
-      const lower = q1 - 1.5 * iqr;
-      const upper = q3 + 1.5 * iqr;
-
-      this.data = this.data.filter((row) => {
-        const raw = row[col];
-        const val = typeof raw === "string" ? parseFloat(raw) : raw;
-        return val >= lower && val <= upper;
-      });
-    }
-    return `이상치 제거 완료 (IQR)`;
-  }
-
-  public scale(input: { columns: string[]; method: "minmax" | "zscore" }): string {
-    const { columns, method } = input;
-    for (const col of columns) {
-      const values = this.data
-        .map((row) => {
-          const raw = row[col];
-          const val = typeof raw === "string" ? parseFloat(raw) : raw;
-          return isNaN(val) ? NaN : val;
-        })
-        .filter((v) => !isNaN(v));
-
-      const mu = mean(values);
-      const sigma = std(values);
-      const minVal = Math.min(...values);
-      const maxVal = Math.max(...values);
-
-      this.data = this.data.map((row) => {
-        const raw = row[col];
-        const val = typeof raw === "string" ? parseFloat(raw) : raw;
-        if (isNaN(val)) return row;
-
-        let scaledVal: number;
-        if (method === "zscore") {
-          scaledVal = (val - mu) / sigma;
-        } else {
-          scaledVal = (val - minVal) / (maxVal - minVal);
-        }
-        row[col] = scaledVal;
         return row;
       });
     }
-    return `스케일링 완료 (${method})`;
+
+    return `컬럼 ${column} 결측치 처리 완료 (${strategy}), 처리 개수: ${missingCount}`;
   }
 
-  public encode(input: { column: string; method: "label" | "onehot" }): string {
-    const { column, method } = input;
-    const unique = Array.from(new Set(this.data.map((row) => row[column])));
+  private scaleColumn(params: { column: string; method: "minmax" | "zscore" }): string {
+    const { column, method } = params;
+    const values = this.data
+      .map(row => typeof row[column] === "string" ? parseFloat(row[column] as string) : row[column])
+      .filter(v => typeof v === "number" && !isNaN(v)) as number[];
+
+    if (values.length === 0) return `컬럼 ${column}: 숫자형 데이터 없음`;
+
+    const mu = mean(values);
+    const sigma = std(values);
+    const minVal = Math.min(...values);
+    const maxVal = Math.max(...values);
+
+    this.data = this.data.map(row => {
+      let val = typeof row[column] === "string" ? parseFloat(row[column] as string) : row[column];
+      if (typeof val !== "number" || isNaN(val)) return row;
+
+      if (method === "zscore") {
+        val = (val - mu) / sigma;
+      } else {
+        val = (val - minVal) / (maxVal - minVal);
+      }
+      row[column] = val;
+      return row;
+    });
+
+    return `컬럼 ${column} 스케일링 완료 (${method})`;
+  }
+
+  private encodeColumn(params: { column: string; method: "label" | "onehot" }): string {
+    const { column, method } = params;
+    const unique = Array.from(new Set(this.data.map(row => row[column])));
 
     if (method === "label") {
       const labelMap = Object.fromEntries(unique.map((v, i) => [v, i]));
-      this.data = this.data.map((row) => {
+      this.data = this.data.map(row => {
         row[column] = labelMap[row[column]];
         return row;
       });
-    } else if (method === "onehot") {
-      this.data = this.data.map((row) => {
-        const encoded: { [key: string]: string | number } = { ...row };
+    } 
+    else {
+      this.data = this.data.map(row => {
+        const encoded: Record<string, string | number> = { ...row };
         for (const val of unique) {
           encoded[`${column}_${val}`] = row[column] === val ? 1 : 0;
         }
@@ -196,50 +143,45 @@ export class PreprocessingTool {
         return encoded;
       });
     }
-    return `인코딩 완료 (${method})`;
+
+    return `컬럼 ${column} 인코딩 완료 (${method})`;
   }
 
-  //분산 기준 선택
-  public selectFeatures(input: { threshold: number }): string[] {
-    const { threshold } = input;
-    const selected: string[] = [];
-    for (const key of Object.keys(this.data[0] || {})) {
-      const values = this.data
-        .map((row) => {
-          const raw = row[key];
-          const val = typeof raw === "string" ? parseFloat(raw) : raw;
-          return isNaN(val) ? NaN : val;
-        })
-        .filter((v) => !isNaN(v));
+  public async runPreprocessing(request: PreprocessingRequest): Promise<PreprocessingResponse> {
+    // CSV 로딩
+    const defaultDir = path.join(process.cwd(), "uploads");
+    const cleanedFilePath = request.filePath.replace(/^.*uploads[\\/]/, "");
+    const resolvedPath = path.join(defaultDir, cleanedFilePath);
 
-      const variance = std(values) ** 2;
-      if (variance >= threshold) selected.push(key);
+    try {
+      const file = await fs.readFile(resolvedPath, "utf-8");
+      this.data = parse(file, { columns: true, skip_empty_lines: true }) as Data;
+    } catch (err) {
+      return [`파일을 읽을 수 없습니다: ${(err as Error).message}`];
     }
-    return selected;
+
+    const results: string[] = [];
+
+    for (const rec of request.recommendations) {
+      if (rec.fillna) {
+        results.push(this.handleMissingColumn({ column: rec.column, strategy: rec.fillna }));
+      }
+    }
+    for (const rec of request.recommendations) {
+      if (rec.normalize) {
+        results.push(this.scaleColumn({ column: rec.column, method: rec.normalize }));
+      }
+    }
+    for (const rec of request.recommendations) {
+      if (rec.encoding) {
+        results.push(this.encodeColumn({ column: rec.column, method: rec.encoding }));
+      }
+    }
+
+    return results;
   }
 
-  public generateFeatures(input: { columns: string[]; method: "sum" | "prod" }): string {
-    const { columns, method } = input;
-    this.data = this.data.map((row) => {
-      const values = columns.map((col) => {
-        const raw = row[col];
-        const val = typeof raw === "string" ? parseFloat(raw) : raw;
-        return isNaN(val) ? 0 : val;
-      });
-      const newVal =
-        method === "sum"
-          ? values.reduce((a, b) => a + b, 0)
-          : values.reduce((a, b) => a * b, 1);
-      row[`${method}_${columns.join("_")}`] = newVal;
-      return row;
-    });
-    return `새로운 특성 생성 완료 (${method})`;
-  }
 
-  public getPreview(input: { limit?: number }): { [key: string]: string | number }[] {
-    const limit = input.limit ?? 5;
-    return this.data.slice(0, limit);
-  }
 
   // 저장 기능은 향후 stringify 설치 후 활성화 가능
   // public async exportCSV(outputPath: string) {
