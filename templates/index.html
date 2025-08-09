@@ -1,195 +1,125 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html>
 <head>
-  <meta charset="UTF-8" />
   <title>CSV 요약 챗봇</title>
   <style>
-    :root{
-      --bg:#0f1115; --panel:#161a22; --line:#2a2f3a; --text:#e7e7ea; --muted:#9aa0a6; --accent:#4CAF50;
+    body {
+      max-width: 600px;
+      margin: 2rem auto;
+      font-family: Arial, sans-serif;
+      padding: 0 1rem;
     }
-    *{box-sizing:border-box}
-    body{
-      margin:0; background:var(--bg); color:var(--text);
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial
+    h2 {
+      border-bottom: 2px solid #ddd;
+      padding-bottom: 0.5rem;
     }
-    header{
-      height:52px; display:flex; align-items:center; padding:0 16px;
-      border-bottom:1px solid var(--line); background:#1b2030; font-weight:600
+    form {
+      margin-bottom: 2rem;
     }
-    .layout {
-      display: grid;
-      grid-template-columns: 35% 45% 20%;
-      height: calc(100vh - 52px);
+    input[type="file"], input[type="text"] {
+      padding: 0.5rem;
+      width: 80%;
+      margin-right: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
     }
-    .panel{ background:var(--panel); border-right:1px solid var(--line); padding:16px; overflow:auto}
-    .panel.right{ border-right:0; border-left:1px solid var(--line)}
-    .center{ padding:24px; overflow:auto}
-
-    h1,h2,h3{margin:0 0 12px}
-    .muted{color:var(--muted)}
-    form{ margin-bottom:16px }
-    input[type="file"], input[type="text"]{
-      width:100%; padding:10px 12px; border:1px solid var(--line);
-      border-radius:8px; background:#0f1320; color:var(--text)
+    button {
+      padding: 0.5rem 1rem;
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
     }
-    .row{ display:grid; grid-template-columns:1fr auto; gap:8px; }
-    button{
-      padding:10px 14px; border:none; border-radius:8px; cursor:pointer;
-      background:var(--accent); color:#fff; font-weight:600
+    button:hover {
+      background-color: #45a049;
     }
-    button:hover{ filter:brightness(1.03) }
-    table{ width:100%; border-collapse:collapse; margin-top:8px; background:#121621; border:1px solid var(--line) }
-    th,td{ padding:8px; border-bottom:1px solid var(--line) }
-    th{ background:#0f1320; text-align:left }
-    .chat-list{
-      display:flex; flex-direction:column; gap:10px;
-      border:1px solid var(--line); border-radius:12px; padding:16px;
-      background:#121621; min-height:280px;
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 2rem;
     }
-    .bubble{ max-width:80%; padding:10px 12px; border-radius:12px; line-height:1.45; white-space:pre-wrap }
-    .me{ align-self:flex-end; background:#24304a }
-    .bot{ align-self:flex-start; background:#1e2433 }
-    .file-card{ border:1px solid var(--line); border-radius:12px; padding:12px; background:#121621; margin-bottom:10px }
-    .file-actions{ display:flex; gap:8px; margin-top:8px }
-    .file-thumb{ width:100%; border-radius:8px; border:1px solid var(--line) }
-    small{ color:var(--muted) }
-    pre{background:#0f1320;border:1px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap}
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    /* 채팅 말풍선 스타일 */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .chat-message {
+      max-width: 70%;
+      padding: 0.75rem 1rem;
+      border-radius: 15px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .chat-user {
+      align-self: flex-end;
+      background-color: #DCF8C6;
+    }
+    .chat-bot {
+      align-self: flex-start;
+      background-color: #eee;
+    }
   </style>
 </head>
 <body>
-<header>CSV 요약 챗봇</header>
+  <h2>CSV 업로드</h2>
+  <form action="/upload_csv/" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">업로드</button>
+  </form>
 
-<main class="layout">
-  <!-- 왼쪽: 업로드 + 미리보기 -->
-  <aside class="panel left">
-    <h2>업로드</h2>
-    <form action="/upload_csv/" method="post" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".csv" required />
-      <div style="height:8px"></div>
-      <button type="submit">업로드</button>
-    </form>
-
-    {% if head_rows %}
-      <h3>{{ current_filename }} 상위 5행</h3>
-      <table>
-        <thead>
-          <tr>
-            {% for col in head_columns %}<th>{{ col }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in head_rows %}
-            <tr>
-              {% for col in head_columns %}<td>{{ row[col] }}</td>{% endfor %}
-            </tr>
+  {% if head_rows %}
+    <h3>{{ current_filename }}의 상위 5개 행</h3>
+    <table>
+      <thead>
+        <tr>
+          {% for col in head_columns %}
+            <th>{{ col }}</th>
           {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
-
-    {% if tail_rows %}
-      <h3 style="margin-top:16px">{{ current_filename }} 하위 5행</h3>
-      <table>
-        <thead>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in head_rows %}
           <tr>
-            {% for col in tail_columns %}<th>{{ col }}</th>{% endfor %}
+            {% for col in head_columns %}
+              <td>{{ row[col] }}</td>
+            {% endfor %}
           </tr>
-        </thead>
-        <tbody>
-          {% for row in tail_rows %}
-            <tr>
-              {% for col in tail_columns %}<td>{{ row[col] }}</td>{% endfor %}
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
-
-    {% if df_info_text %}
-      <h3 style="margin-top:16px">DataFrame info()</h3>
-      <pre>{{ df_info_text }}</pre>
-    {% endif %}
-
-    {% if describe_rows %}
-      <h3 style="margin-top:16px">describe()</h3>
-      <table>
-        <thead>
-          <tr>
-            {% for col in describe_columns %}<th>{{ col }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in describe_rows %}
-            <tr>
-              {% for col in describe_columns %}
-                <td>{{ row[col] if col in row else "" }}</td>
-              {% endfor %}
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
-  </aside>
-
-  <!-- 중앙: 채팅 -->
-  <section class="center">
-    <h1>Chat</h1>
-    <div class="chat-list">
-      {% if chat_history %}
-        {% for chat in chat_history %}
-          {% if chat.role == "user" %}
-            <div class="bubble me">{{ chat.content }}</div>
-          {% else %}
-            <div class="bubble bot">{{ chat.content }}</div>
-          {% endif %}
         {% endfor %}
-      {% elif reply %}
-        <div class="bubble bot">{{ reply }}</div>
-      {% else %}
-        <div class="muted">메시지를 입력해 대화를 시작하세요.</div>
-      {% endif %}
-    </div>
-    <div style="height:10px"></div>
-    <form class="row" action="/chat/" method="post">
-      <input type="text" name="message" placeholder="메시지 입력" required />
-      <input type="text" name="filename" value="{{ current_filename or '' }}">
-      <button type="submit">전송</button>
-    </form>
-    {% if image_files %}
-      <h2>📊 분석 결과</h2>
-      {% for image in image_files %}
-        <div style="margin:12px 0">
-          <img src="{{ url_for('static', path='/' ~ image) }}" class="file-thumb" alt="{{ image }}">
-          <div class="file-actions">
-            <a class="button" href="{{ url_for('static', path='/' ~ image) }}" download>이미지 다운로드</a>
-          </div>
-        </div>
-      {% endfor %}
-    {% endif %}
-  </section>
+      </tbody>
+    </table>
+  {% endif %}
 
-  <!-- 오른쪽: 생성된 파일 다운로드 -->
-  <aside class="panel right">
-    <h2>생성된 파일</h2>
-    {% if generated_files and generated_files|length > 0 %}
-      {% for f in generated_files %}
-        <div class="file-card">
-          {% set is_img = f.name.endswith('.png') or f.name.endswith('.jpg') or f.name.endswith('.jpeg') or f.name.endswith('.webp') or f.name.endswith('.gif') %}
-          {% if is_img %}
-            <img class="file-thumb" src="{{ f.url }}" alt="{{ f.name }}">
-          {% else %}
-            <small>{{ f.name }}</small>
-          {% endif %}
-          <div class="file-actions">
-            <a class="btn" href="{{ f.url }}" download="{{ f.name }}">Download</a>
-          </div>
-          <small>{{ f.name }} • {{ (f.size/1024)|round(1) }} KB</small>
-        </div>
+  <h2>채팅</h2>
+  <form action="/chat/" method="post">
+    <input type="text" name="message" placeholder="메시지 입력" required>
+    <input type="text" name="filename" placeholder="파일명 (예: iris.csv)" value="{{ current_filename or '' }}">
+    <button type="submit">전송</button>
+  </form>
+
+  {% if chat_history %}
+    <div class="chat-container">
+      {% for chat in chat_history %}
+        {% if chat.role == "user" %}
+          <div class="chat-message chat-user">{{ chat.content }}</div>
+        {% else %}
+          <div class="chat-message chat-bot">{{ chat.content }}</div>
+        {% endif %}
       {% endfor %}
-    {% else %}
-      <p class="muted">아직 생성된 파일이 없습니다.</p>
-    {% endif %}
-  </aside>
-</main>
+    </div>
+  {% elif reply %}
+    <div class="chat-container">
+      <div class="chat-message chat-bot">{{ reply }}</div>
+    </div>
+  {% endif %}
 </body>
 </html>
