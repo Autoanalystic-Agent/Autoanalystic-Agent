@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CSV 요약 챗봇</title>
+  <style>
+    body {
+      max-width: 600px;
+      margin: 2rem auto;
+      font-family: Arial, sans-serif;
+      padding: 0 1rem;
+    }
+    h2 {
+      border-bottom: 2px solid #ddd;
+      padding-bottom: 0.5rem;
+    }
+    form {
+      margin-bottom: 2rem;
+    }
+    input[type="file"], input[type="text"] {
+      padding: 0.5rem;
+      width: 80%;
+      margin-right: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-bottom: 2rem;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    /* 채팅 말풍선 스타일 */
+    .chat-container {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .chat-message {
+      max-width: 70%;
+      padding: 0.75rem 1rem;
+      border-radius: 15px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .chat-user {
+      align-self: flex-end;
+      background-color: #DCF8C6;
+    }
+    .chat-bot {
+      align-self: flex-start;
+      background-color: #eee;
+    }
+  </style>
+</head>
+<body>
+  <h2>CSV 업로드</h2>
+  <form action="/upload_csv/" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <button type="submit">업로드</button>
+  </form>
+
+  {% if head_rows %}
+    <h3>{{ current_filename }}의 상위 5개 행</h3>
+    <table>
+      <thead>
+        <tr>
+          {% for col in head_columns %}
+            <th>{{ col }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in head_rows %}
+          <tr>
+            {% for col in head_columns %}
+              <td>{{ row[col] }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <h2>채팅</h2>
+  <form action="/chat/" method="post">
+    <input type="text" name="message" placeholder="메시지 입력" required>
+    <input type="text" name="filename" placeholder="파일명 (예: iris.csv)" value="{{ current_filename or '' }}">
+    <button type="submit">전송</button>
+  </form>
+
+  {% if chat_history %}
+    <div class="chat-container">
+      {% for chat in chat_history %}
+        {% if chat.role == "user" %}
+          <div class="chat-message chat-user">{{ chat.content }}</div>
+        {% else %}
+          <div class="chat-message chat-bot">{{ chat.content }}</div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% elif reply %}
+    <div class="chat-container">
+      <div class="chat-message chat-bot">{{ reply }}</div>
+    </div>
+  {% endif %}
+</body>
+</html>

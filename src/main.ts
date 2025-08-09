@@ -1,71 +1,108 @@
 import { Agentica } from "@agentica/core";
 import { OpenAI } from "openai";
-import { DateTool, WeatherTool } from "./tools/tools";
+import { BasicAnalysisTool } from "./tools/BasicAnalysisTool";
+import { SelectorTool } from "./tools/SelectorTool";
+import { WorkflowTool } from "./tools/WorkflowTool";
+
+
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
+import { PreprocessingRequest, PreprocessingTool } from "./tools/PreprocessingTool";
+import fs from "fs";
+
 
 // .env 파일을 불러온다.
 dotenv.config();
-
+// main 함수에서 실행 모드를 결정
 async function main() {
-  // OpenAI를 정의
+  const isInteractive = process.argv.includes("--interactive");
+
+  // OpenAI API 설정
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
 
-  // Agentica를 사용하여 agent를 생성한다.
+  // Agentica 에이전트 정의
   const agent = new Agentica({
     model: "chatgpt",
     vendor: {
       model: "gpt-4.1-mini",
       api: openai,
     },
-    // Controller에 Tool을 입력할 수 있다.
     controllers: [
       {
-        name: "Date Tool", // 컨트롤러 이름 설정
-        protocol: "class",  // 형식 설정. http, class가 존재한다.
-        application: typia.llm.application<DateTool, "chatgpt">(), // OpenAI Function Schema가 들어간다.
-        execute: new DateTool(), // OpenAI Function Schema의 구현체가 들어간다. application에 입력된 OpenAI Function Schema를 토대로, excute의 구현체의 함수를 실행한다.
+        name: "기초 분석 도구",
+        protocol: "class",
+        application: typia.llm.application<BasicAnalysisTool, "chatgpt">(),
+        execute: new BasicAnalysisTool(),
       },
       {
-        name: "Weather Tool",
+        name: "컬럼 선택 도구",
         protocol: "class",
-        application: typia.llm.application<WeatherTool, "chatgpt">(),
-        execute: new WeatherTool(),
+        application: typia.llm.application<SelectorTool, "chatgpt">(),
+        execute: new SelectorTool(),
+      },
+      {
+        name: "전처리 도구",
+        protocol: "class",
+        application: typia.llm.application<PreprocessingTool, "chatgpt">(),
+        execute: new PreprocessingTool(),
       },
     ],
   });
 
-  // 터미널에서 대화를 주고받기 위한 readline interface 생성
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
 
-  // Agent와 대화하는 함수.
-  const conversation = () => {
-    rl.question("User Input (exit: q) : ", async (input) => {
-      // q를 입력하면 대화가 종료.
-      if (input === "q") {
-        rl.close();
-        return;
+
+  // 기본 모드: 명령줄 인자 실행
+const args = process.argv.slice(2);
+const userMessage = args[0] || "";
+const csvFilePath = args[1];
+
+if (csvFilePath) {
+  try {
+    const csvContent = fs.readFileSync(csvFilePath, "utf-8");
+    console.log(`📁 CSV 파일 읽음: ${csvFilePath}`);
+
+    // agent에 파일경로와 사용자 메시지 같이 전달해서
+    // LLM이 상황에 맞게 도구를 선택하게 한다.
+    let prompt = userMessage;
+    if (csvFilePath) {
+      prompt += `\n\n[CSV 파일 경로]: ${csvFilePath}`;
+    }
+
+    const answers = await agent.conversate(prompt);
+
+
+    console.log("\n✅ Agentica 응답 전체(JSON):");
+    console.log(JSON.stringify(answers, null, 2));
+
+    for (const answer of answers) {
+      if ("text" in answer) {
+        console.log("\n🧠 Agent 응답 메시지:");
+        console.log(answer.text);
       }
-		
-      const answers = await agent.conversate(input);
+    }
 
-      // Agent의 답변을 console.log한다.
-      answers.forEach((answer) => {
-        console.log(JSON.stringify(answer, null, 2));
-      });
+  } catch (e) {
+    console.error(`❌ CSV 파일 읽기 실패: ${e}`);
+    return;
+  }
+} else {
+  // CSV 파일 경로가 없으면 그냥 사용자 메시지만 agent에게 넘긴다.
+  const answers = await agent.conversate(userMessage);
 
-      // 대화를 지속할 수 있도록 재귀호출.
-      conversation();
-    });
-  };
+  console.log("\n✅ Agentica 응답 전체(JSON):");
+  console.log(JSON.stringify(answers, null, 2));
 
-  conversation();
+  for (const answer of answers) {
+    if ("text" in answer) {
+      console.log("\n🧠 Agent 응답 메시지:");
+      console.log(answer.text);
+    }
+  }
+}
+
 }
 
 main().catch(console.error);
