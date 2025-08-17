@@ -23,6 +23,7 @@
     "@samchon/openapi": "^4.6.0",
     "@types/d3": "7.4.3",
     "csv-parse": "^6.1.0",
+    "csv-stringify": "6.6.0",
     "d3": "7.9.0",
     "dotenv": "^17.2.0",
     "form-data": "4.0.3",
