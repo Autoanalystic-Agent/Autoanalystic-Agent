@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { parse } from "csv-parse/sync";
+import { stringify } from "csv-stringify/sync";
 
 type Data = Record<string, string | number>[];
 
@@ -9,7 +10,12 @@ export interface PreprocessingRequest {
   recommendations: PreprocessingRecommendation[];
 }
 
-export type PreprocessingResponse = string[];
+//export type PreprocessingResponse = string[];
+
+export interface PreprocessingResponse {
+  messages: string[];
+  preprocessedFilePath: string;
+}
 
 function mean(values: number[]): number {
   if (values.length === 0) return NaN;
@@ -149,7 +155,7 @@ export class PreprocessingTool {
 
   public async runPreprocessing(request: PreprocessingRequest): Promise<PreprocessingResponse> {
     // CSV 로딩
-    const defaultDir = path.join(process.cwd(), "uploads");
+    const defaultDir = path.join(process.cwd(), "src/uploads");
     const cleanedFilePath = request.filePath.replace(/^.*uploads[\\/]/, "");
     const resolvedPath = path.join(defaultDir, cleanedFilePath);
 
@@ -157,7 +163,10 @@ export class PreprocessingTool {
       const file = await fs.readFile(resolvedPath, "utf-8");
       this.data = parse(file, { columns: true, skip_empty_lines: true }) as Data;
     } catch (err) {
-      return [`파일을 읽을 수 없습니다: ${(err as Error).message}`];
+      return {
+      messages: [`파일을 읽을 수 없습니다: ${(err as Error).message}`],
+      preprocessedFilePath: ""
+    };
     }
 
     const results: string[] = [];
@@ -177,15 +186,13 @@ export class PreprocessingTool {
         results.push(this.encodeColumn({ column: rec.column, method: rec.encoding }));
       }
     }
+    
+    const outputFileName = `preprocessed_${cleanedFilePath}`;
+    const outputPath = path.join(process.cwd(), "src/outputs", outputFileName);
+    const csv = stringify(this.data, { header: true });
+    await fs.writeFile(outputPath, csv, "utf-8");
 
-    return results;
+    return { messages: results, preprocessedFilePath: outputPath };
   }
 
-
-
-  // 저장 기능은 향후 stringify 설치 후 활성화 가능
-  // public async exportCSV(outputPath: string) {
-  //   const csv = stringify(this.data, { header: true });
-  //   await fs.writeFile(outputPath, csv, 'utf-8');
-  // }
 }

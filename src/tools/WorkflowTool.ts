@@ -2,6 +2,8 @@
 import { BasicAnalysisTool } from "./BasicAnalysisTool";
 import { SelectorTool } from "./SelectorTool";
 import { VisualizationTool } from "./VisualizationTool";
+import { PreprocessingTool } from "./PreprocessingTool";
+import { MachineLearningTool } from "./MachineLearningTool";
 
 export class WorkflowTool {
   static readonly description = "CSV 파일 경로를 받아 통계 분석 및 컬럼 추천, 모델 추천을 자동 수행합니다.";
@@ -39,6 +41,8 @@ export class WorkflowTool {
       }[];
     };
     chartPaths: string[];
+    preprocessedFilePath?: string;
+    mlResultPath?: { reportPath: string };
   }> {
     if (!filePath) {
       throw new Error("파일 경로(filePath)는 필수입니다.");
@@ -71,8 +75,26 @@ export class WorkflowTool {
       },
     });
 
+    // 4. 전처리 실행
+    const preprocessor = new PreprocessingTool();
+    const { messages, preprocessedFilePath } = await preprocessor.runPreprocessing({
+      filePath,
+      recommendations: preprocessingRecommendations
+    });
 
-    //  3. 결과 반환
+    // 5. 머신러닝 실행
+    const mlTool = new MachineLearningTool();
+    const mlResultPath = await mlTool.run({
+      filePath : preprocessedFilePath,
+      selectorResult: {
+        targetColumn,
+        problemType,
+        mlModelRecommendation,
+      },
+    });
+
+
+    //  6. 결과 반환
     console.log(`\n [WorkflowTool 완료]`);
     return {
       filePath,
@@ -84,6 +106,8 @@ export class WorkflowTool {
       problemType,
       mlModelRecommendation,
       chartPaths,
+      preprocessedFilePath,
+      mlResultPath,
     };
   }
 }

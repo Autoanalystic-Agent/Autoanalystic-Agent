@@ -21,7 +21,7 @@ export class BasicAnalysisTool {
 
     try {
       // uploads 디렉토리 기준으로 경로 정리
-      const defaultDir = path.join(process.cwd(), "uploads");
+      const defaultDir = path.join(process.cwd(), "src/uploads");
       const cleanedFilePath = filePath.replace(/^.*uploads[\\/]/, "");
       const resolvedPath = path.join(defaultDir, cleanedFilePath);
 
