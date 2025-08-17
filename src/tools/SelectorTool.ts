@@ -1,34 +1,44 @@
 // src/tools/SelectorTool.ts
+
+type DType = "number" | "string";
+type Problem = "regression" | "classification";
+type Plot = "scatter" | "box" | "heatmap";
+
 export class SelectorTool {
   static readonly description = "CSV 컬럼 요약 데이터를 받아 분석에 적합한 컬럼만 선별";
 
-  /**
-   * CSV 통계 데이터를 기반으로 분석에 적합한 컬럼들을 추천한다.
+   /**
+   * 옵션:
+   * - targetStrategy: "last" | "infer" (기본값 "last" → 기존 동작 유지)
    */
-
   public async run({
     columnStats,
+    targetStrategy = "last",
   }: {
     columnStats: {
       column: string;
-      dtype: string;
+      dtype: DType;
       missing: number;
       unique: number;
       mean?: number;
       std?: number;
+      min?: number;
+      max?: number;
     }[];
+    targetStrategy?: "last" | "infer";
   }): Promise<{
     selectedColumns: string[];
-    recommendedPairs: { column1: string; column2: string }[];
+    recommendedPairs: { column1: string; column2: string; plot: Plot }[];
     preprocessingRecommendations: {
       column: string;
       fillna?: "drop" | "mean" | "mode";
       normalize?: "minmax" | "zscore";
       encoding?: "label" | "onehot";
     }[];
+
     // 머신러닝을 위한 필드 추가
     targetColumn: string;
-    problemType: "regression" | "classification";
+    problemType: Problem;
     mlModelRecommendation: {
       model: string;
       score: number;
@@ -43,21 +53,45 @@ export class SelectorTool {
     };
   }> {
     const columnNames = columnStats.map((c) => c.column);
-    const selectedColumns = columnNames.filter(
-      (name) => !name.toLowerCase().includes("id") && !name.toLowerCase().includes("code")
-    );
+    // 1) 후보 컬럼
+    const selectedColumns = columnNames.filter((name) => {
+      const lower = name.toLowerCase();
+      const isIdLike =
+        lower === "id" || lower.endsWith("_id") || lower.endsWith("id") || lower.startsWith("id_");
+      const isCodeLike =
+        lower === "code" || lower.endsWith("_code") || lower.endsWith("code") || lower.startsWith("code_");
+      return !(isIdLike || isCodeLike);
+    });
 
-    const recommendedPairs: { column1: string; column2: string }[] = [];
+    // dtype 맵
+    const dtypeOf: Record<string, DType> = {};
+    for (const s of columnStats) dtypeOf[s.column] = s.dtype;
+
+    // 2) recommendedPairs + plot 타입
+    const recommendedPairs: { column1: string; column2: string; plot: Plot }[] = [];
     if (selectedColumns.length >= 2) {
       for (let i = 0; i < selectedColumns.length - 1; i++) {
         for (let j = i + 1; j < selectedColumns.length; j++) {
-          recommendedPairs.push({
-            column1: selectedColumns[i],
-            column2: selectedColumns[j],
-          });
+          const a = selectedColumns[i];
+          const b = selectedColumns[j];
+          const da = dtypeOf[a];
+          const db = dtypeOf[b];
+
+          let plot: Plot;
+          if (da === "number" && db === "number") plot = "scatter";
+          else if (
+            (da === "string" && db === "number") ||
+            (da === "number" && db === "string")
+          )
+            plot = "box";
+          else plot = "heatmap"; // string-string
+
+          recommendedPairs.push({ column1: a, column2: b, plot });
         }
       }
     }
+
+    // 3) 전처리 권고
     const preprocessingRecommendations = columnStats.map((stat) => {
       const isNumeric = stat.dtype === "number";
 
@@ -78,18 +112,32 @@ export class SelectorTool {
       };
     });
 
-    const targetColumn = columnStats[columnStats.length - 1].column;
-    const targetDtype = columnStats[columnStats.length - 1].dtype;
-    const problemType = targetDtype === "number" ? "regression" : "classification";
+    // 4) 타깃 선택 전략
+    let targetColumn = columnStats[columnStats.length - 1].column; // 기본: 마지막
+    if (targetStrategy === "infer") {
+      // 간단 추론 규칙: (1) 문자열/범주형이면서 적당한 클래스 수(2~30) 우선, 없으면 숫자형 마지막
+      const candidates = columnStats.filter(
+        (c) => c.dtype !== "number" && c.unique >= 2 && c.unique <= 30
+      );
+      if (candidates.length > 0) {
+        targetColumn = candidates[candidates.length - 1].column; // 뒤쪽 선호
+      }
+    }
+
+    // 5) 문제 유형 판별
+    const targetDtype =
+      columnStats.find((c) => c.column === targetColumn)?.dtype || "string";
+    const problemType: Problem = targetDtype === "number" ? "regression" : "classification";
+
+    // 6) 모델 추천 (기존 로직 유지)
     const mlModelRecommendation = this.recommendModel(problemType, columnStats);
 
-
-    //  로그 확인
+    // 로그
     console.log(`\n [SelectorTool 결과]:`);
     console.log("- 선택된 컬럼:", selectedColumns);
-    console.log("- 추천된 페어:", recommendedPairs);
-    console.log("- 전처리 추천:", preprocessingRecommendations);
-    console.log("- 타겟 컬럼:", targetColumn);
+    console.log("- 추천된 페어(일부):", recommendedPairs.slice(0, 3));
+    console.log("- 전처리 추천(일부):", preprocessingRecommendations.slice(0, 3));
+    console.log("- 타깃 컬럼:", targetColumn, "(전략:", targetStrategy, ")");
     console.log("- 문제 유형:", problemType);
     console.log("- 모델 추천:", mlModelRecommendation);
 
@@ -99,9 +147,11 @@ export class SelectorTool {
       preprocessingRecommendations,
       targetColumn,
       problemType,
-      mlModelRecommendation
+      mlModelRecommendation,
     };
   }
+
+
   private recommendModel(
     problemType: "regression" | "classification",
     columnStats: {
@@ -111,12 +161,10 @@ export class SelectorTool {
       unique: number;
       mean?: number;
       std?: number;
+      min?: number;
+      max?: number;
     }[]
   ) {
-    const numColumns = columnStats.length;
-    const numNumeric = columnStats.filter((c) => c.dtype === "number").length;
-    const numericRatio = numNumeric / numColumns;
-
     if (problemType === "regression") {
       const candidates = [
         {
@@ -138,10 +186,7 @@ export class SelectorTool {
           params: {},
         },
       ];
-      return {
-        ...candidates[0],
-        alternatives: candidates.slice(1),
-      };
+      return { ...candidates[0], alternatives: candidates.slice(1) };
     } else {
       const candidates = [
         {
@@ -163,10 +208,8 @@ export class SelectorTool {
           params: {},
         },
       ];
-      return {
-        ...candidates[0],
-        alternatives: candidates.slice(1),
-      };
+      return { ...candidates[0], alternatives: candidates.slice(1) };
     }
   }
 }
+    
