@@ -1,1 +1,11 @@
 .env
+
+node_modules/
+
+src/uploads/
+
+src/outputs/
+
+venv13/
+
+.venv/
