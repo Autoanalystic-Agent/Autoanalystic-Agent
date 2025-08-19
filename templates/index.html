@@ -4,6 +4,30 @@
   <meta charset="UTF-8" />
   <title>CSV 요약 챗봇</title>
   <style>
+    /* 왼쪽 패널을 컬럼 레이아웃으로, 본문만 스크롤되게 */
+    .panel.left{
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;          /* 패널 자체 스크롤 제거 */
+    }
+    /* 왼쪽 패널의 본문(표/정보)은 여기에서만 스크롤 */
+    .left-scroll{
+      flex: 1 1 auto;
+      overflow: auto;
+      padding-bottom: 12px;      /* 푸터 버튼과 겹침 방지 */
+    }
+
+    /* 하단 버튼을 패널 바닥에 고정 */
+    .sticky-bottom{
+      position: sticky;
+      bottom: 0;                 /* 화면 하단 기준으로 붙음 */
+      padding: 12px 0 0 0;
+      background: var(--panel);  /* 스크롤 시 겹치는 영역 색상 유지 */
+      border-top: 1px solid var(--line);
+    }
+    /* 비활성화 버튼 시각 피드백 */
+    button[disabled]{ filter: grayscale(1) opacity(0.5); cursor: not-allowed; }
+
     :root{
       --bg:#0f1115; --panel:#161a22; --line:#2a2f3a; --text:#e7e7ea; --muted:#9aa0a6; --accent:#4CAF50;
     }
@@ -54,6 +78,27 @@
     .file-thumb{ width:100%; border-radius:8px; border:1px solid var(--line) }
     small{ color:var(--muted) }
     pre{background:#0f1320;border:1px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap}
+    /* ===== [ADD] 간단 카드/그리드 유틸 ===== */
+    .card{ border:1px solid var(--line); border-radius:12px; padding:12px; background:#121621; margin:12px 0; }
+    .kv{ display:flex; justify-content:space-between; gap:12px; padding:4px 0; color:#c8c8d0; }
+    .badge{ display:inline-block; padding:2px 8px; border-radius:999px; background:#1f2937; color:#e7e7ea; font-size:12px; margin:2px; }
+    .timeline{ position:relative; margin-top:12px; padding-left:18px }
+    .timeline:before{ content:""; position:absolute; left:8px; top:0; bottom:0; width:2px; background:var(--line) }
+    .step{ position:relative; margin:14px 0 }
+    .step .dot{ position:absolute; left:-2px; top:6px; width:12px; height:12px; border-radius:50%; background:#5b6474; border:2px solid #0f1115 }
+    .step .dot.done{ background:#2e7d32 }    /* 녹색 */
+    .step .dot.skipped{ background:#545b66 } /* 회색 */
+    .step .body{ background:#11151f; border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .step .head{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px }
+    .status{ font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--line) }
+    .status.done{ background:#1b2b1c; color:#aee4b7; border-color:#234e2a }
+    .status.skipped{ background:#1a1f2b; color:#a9b0ba }
+    .mini{ font-size:12px; color:#aab0b8 }
+    /* [ADD] 왼쪽 패널 하단 고정 버튼 & 비활성화 스타일 */
+    .sticky-bottom{ position: sticky; bottom: 16px; margin-top: 24px; }
+    button[disabled]{ filter: grayscale(1) opacity(0.5); cursor: not-allowed; }
+
+    /* ===== [ADD] 끝 ===== */
   </style>
 </head>
 <body>
@@ -62,73 +107,92 @@
 <main class="layout">
   <!-- 왼쪽: 업로드 + 미리보기 -->
   <aside class="panel left">
-    <h2>업로드</h2>
-    <form action="/upload_csv/" method="post" enctype="multipart/form-data">
-      <input type="file" name="file" accept=".csv" required />
-      <div style="height:8px"></div>
-      <button type="submit">업로드</button>
-    </form>
-
-    {% if head_rows %}
-      <h3>{{ current_filename }} 상위 5행</h3>
-      <table>
-        <thead>
-          <tr>
-            {% for col in head_columns %}<th>{{ col }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in head_rows %}
+    <div class="left-scroll">
+      <h2>업로드</h2>
+      <form action="/upload_csv/" method="post" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv" required />
+        <div style="height:8px"></div>
+        <button type="submit">업로드</button>
+      </form>
+      
+      {% if head_rows %}
+        <h3>{{ current_filename }} 상위 5행</h3>
+        <table>
+          <thead>
             <tr>
-              {% for col in head_columns %}<td>{{ row[col] }}</td>{% endfor %}
+              {% for col in head_columns %}<th>{{ col }}</th>{% endfor %}
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+          </thead>
+          <tbody>
+            {% for row in head_rows %}
+              <tr>
+                {% for col in head_columns %}<td>{{ row[col] }}</td>{% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
 
-    {% if tail_rows %}
-      <h3 style="margin-top:16px">{{ current_filename }} 하위 5행</h3>
-      <table>
-        <thead>
-          <tr>
-            {% for col in tail_columns %}<th>{{ col }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in tail_rows %}
+      {% if tail_rows %}
+        <h3 style="margin-top:16px">{{ current_filename }} 하위 5행</h3>
+        <table>
+          <thead>
             <tr>
-              {% for col in tail_columns %}<td>{{ row[col] }}</td>{% endfor %}
+              {% for col in tail_columns %}<th>{{ col }}</th>{% endfor %}
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+          </thead>
+          <tbody>
+            {% for row in tail_rows %}
+              <tr>
+                {% for col in tail_columns %}<td>{{ row[col] }}</td>{% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
 
-    {% if df_info_text %}
-      <h3 style="margin-top:16px">DataFrame info()</h3>
-      <pre>{{ df_info_text }}</pre>
-    {% endif %}
+      {% if df_info_text %}
+        <h3 style="margin-top:16px">DataFrame info()</h3>
+        <pre>{{ df_info_text }}</pre>
+      {% endif %}
 
-    {% if describe_rows %}
-      <h3 style="margin-top:16px">describe()</h3>
-      <table>
-        <thead>
-          <tr>
-            {% for col in describe_columns %}<th>{{ col }}</th>{% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in describe_rows %}
+      {% if describe_rows %}
+        <h3 style="margin-top:16px">describe()</h3>
+        <table>
+          <thead>
             <tr>
-              {% for col in describe_columns %}
-                <td>{{ row[col] if col in row else "" }}</td>
-              {% endfor %}
+              {% for col in describe_columns %}<th>{{ col }}</th>{% endfor %}
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
+          </thead>
+          <tbody>
+            {% for row in describe_rows %}
+              <tr>
+                {% for col in describe_columns %}
+                  <td>{{ row[col] if col in row else "" }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+      <!-- [ADD] 자동 분석 파이프라인 실행 버튼 (왼쪽 하단 고정) -->
+      <div class="sticky-bottom">
+      <form action="/run_workflow/" method="post">
+        <input type="hidden" name="filename" value="{{ current_filename or '' }}">
+        <button type="submit"
+          {% if not current_filename %}disabled title="CSV를 업로드하세요"{% endif %}>
+          ⚙️ 자동 분석 파이프라인 실행
+        </button>
+        <div class="mini" style="margin-top:6px;">
+          {% if current_filename %}
+            대상 파일: <b>{{ current_filename }}</b>
+          {% else %}
+            CSV를 업로드하면 버튼이 활성화됩니다.
+          {% endif %}
+        </div>
+      </form>
+    </div>
   </aside>
 
   <!-- 중앙: 채팅 -->
@@ -155,13 +219,140 @@
       <input type="hidden" name="filename" value="{{ current_filename or '' }}">
       <button type="submit">전송</button>
     </form>
-    {% if image_files %}
+    <!-- [ADD] 워크플로 단계별 결과 타임라인 -->
+    {% if workflow and steps %}
+      <div class="card">
+        <h2 style="margin:0 0 8px 0;">🔎 워크플로 단계별 결과</h2>
+        <div class="timeline">
+          {% for s in steps %}
+          <div class="step">
+            <div class="dot {{ s.status }}"></div>
+            <div class="body">
+              <div class="head">
+                <strong>{{ s.title }}</strong>
+                <span class="status {{ s.status }}">{{ '완료' if s.status=='done' else '건너뜀' }}</span>
+              </div>
+
+              {% if s.key == 'basic' and workflow.columnStats %}
+                <div style="overflow:auto;">
+                  <table>
+                    <thead>
+                      <tr><th>컬럼</th><th>타입</th><th>결측</th><th>고유</th><th>평균</th><th>표준편차</th><th>최소</th><th>최대</th></tr>
+                    </thead>
+                    <tbody>
+                      {% for c in workflow.columnStats %}
+                        <tr>
+                          <td><b>{{ c.column }}</b></td>
+                          <td class="muted">{{ c.dtype }}</td>
+                          <td>{{ c.missing }}</td>
+                          <td>{{ c.unique }}</td>
+                          <td>{{ "{:.2f}".format(c.mean) if c.mean is number else "—" }}</td>
+                          <td>{{ "{:.2f}".format(c.std)  if c.std  is number else "—" }}</td>
+                          <td>{{ c.min if c.min is not none else "—" }}</td>
+                          <td>{{ c.max if c.max is not none else "—" }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+              {% elif s.key == 'selector' %}
+                <div class="mini">선택 컬럼:</div>
+                <div style="margin:4px 0 8px 0;">
+                  {% for c in workflow.selectedColumns or [] %}
+                    <span class="badge">{{ c }}</span>
+                  {% endfor %}
+                  {% if not workflow.selectedColumns %}<span class="muted">—</span>{% endif %}
+                </div>
+
+                <div class="mini" style="margin-top:6px;">시각화 추천 페어:</div>
+                {% if workflow.recommendedPairs %}
+                  {% for p in workflow.recommendedPairs %}
+                    <div class="kv"><span>{{ p.column1 }} × {{ p.column2 }}</span><button class="button">그리기</button></div>
+                  {% endfor %}
+                {% else %}
+                  <div class="muted">—</div>
+                {% endif %}
+
+                <div class="mini" style="margin-top:6px;">전처리 추천:</div>
+                <div style="overflow:auto;">
+                  <table>
+                    <thead><tr><th>컬럼</th><th>결측치</th><th>정규화</th><th>인코딩</th></tr></thead>
+                    <tbody>
+                      {% for r in workflow.preprocessingRecommendations or [] %}
+                        <tr>
+                          <td><b>{{ r.column }}</b></td>
+                          <td class="muted">{{ r.fillna or "—" }}</td>
+                          <td class="muted">{{ r.normalize or "—" }}</td>
+                          <td class="muted">{{ r.encoding or "—" }}</td>
+                        </tr>
+                      {% endfor %}
+                      {% if not workflow.preprocessingRecommendations %}
+                        <tr><td colspan="4" class="muted">—</td></tr>
+                      {% endif %}
+                    </tbody>
+                  </table>
+                </div>
+
+              {% elif s.key == 'visual' %}
+                {% if workflow.chartUrls %}
+                  <div class="grid3" style="display:grid;gap:12px;grid-template-columns:1fr;@media(min-width:1000px){grid-template-columns:1fr 1fr 1fr;}">
+                    {% for url in workflow.chartUrls %}
+                      <a href="{{ url }}" target="_blank"><img class="file-thumb" src="{{ url }}" alt="chart"></a>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <div class="muted">추천 페어를 기반으로 생성된 차트가 없습니다.</div>
+                {% endif %}
+
+              {% elif s.key == 'preprocess' %}
+                {% if workflow.preprocessedFilePathUrl %}
+                  <a class="button" href="{{ workflow.preprocessedFilePathUrl }}" target="_blank">전처리 CSV 다운로드</a>
+                {% else %}
+                  <div class="muted">전처리 파일 없음</div>
+                {% endif %}
+
+              {% elif s.key == 'train' %}
+                <div class="kv"><span class="muted">추천 모델</span>
+                  <span>{{ workflow.mlModelRecommendation.model if workflow.mlModelRecommendation else '—' }}</span></div>
+                <div class="kv"><span class="muted">예상 점수</span>
+                  <span>
+                    {% if workflow.mlModelRecommendation and workflow.mlModelRecommendation.score is number %}
+                      {{ (workflow.mlModelRecommendation.score*100)|round(1) }}%
+                    {% else %}—{% endif %}
+                  </span></div>
+                {% if workflow.mlModelRecommendation and workflow.mlModelRecommendation.reason %}
+                  <div class="muted" style="margin:4px 0;">사유: {{ workflow.mlModelRecommendation.reason }}</div>
+                {% endif %}
+                <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                  {% if workflow.mlResultPath and workflow.mlResultPath.mlResultUrl %}
+                    <a class="button" href="{{ workflow.mlResultPath.mlResultUrl }}" target="_blank">모델 파일</a>
+                  {% endif %}
+                  {% if workflow.mlResultPath and workflow.mlResultPath.reportUrl %}
+                    <a class="button" href="{{ workflow.mlResultPath.reportUrl }}" target="_blank">리포트</a>
+                  {% endif %}
+                </div>
+                {% if workflow.mlResultPath and workflow.mlResultPath.report %}
+                  <details style="margin-top:8px;">
+                    <summary>리포트 보기</summary>
+                    <pre>{{ workflow.mlResultPath.report }}</pre>
+                  </details>
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+
+        </div>
+      </div>
+    {% endif %}
+    {% if preview_images %}
       <h2>📊 분석 결과</h2>
-      {% for image in image_files %}
+      {% for img in preview_images %}
         <div style="margin:12px 0">
-          <img src="{{ url_for('static', path='/' ~ image) }}" class="file-thumb" alt="{{ image }}">
+          <img src="{{ img.url }}" class="file-thumb" alt="{{ img.name }}">
           <div class="file-actions">
-            <a class="button" href="{{ url_for('static', path='/' ~ image) }}" download>이미지 다운로드</a>
+            <a class="button" href="{{ img.url }}" download>이미지 다운로드</a>
           </div>
         </div>
       {% endfor %}
