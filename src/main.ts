@@ -12,6 +12,11 @@ import { PreprocessingRequest, PreprocessingTool } from "./tools/PreprocessingTo
 import fs from "fs";
 import { VisualizationTool } from "./tools/VisualizationTool";
 
+const originalConsoleLog = console.log;
+console.log = (...args: any[]) => {
+  if (args[0]?.includes('injecting env')) return; // dotenv 관련 메시지만 무시
+  originalConsoleLog(...args);
+};
 
 // .env 파일을 불러온다.
 dotenv.config();

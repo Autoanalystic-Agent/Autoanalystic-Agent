@@ -201,53 +201,105 @@ def sanitize_stdout(s: str) -> str:
     if not s: return ""
     return ANSI_RE.sub("", s).strip()
 
+def _looks_like_workflow(obj: dict) -> bool:
+    """워크플로 핵심 키가 1개라도 있어야 유효로 간주"""
+    if not isinstance(obj, dict):
+        return False
+    keys = {
+        "columnStats", "selectedColumns", "recommendedPairs",
+        "preprocessingRecommendations", "preprocessedFilePath",
+        "preprocessedFilePathUrl", "mlModelRecommendation",
+        "mlResultPath", "chartPaths", "chartUrls"
+    }
+    return any(k in obj for k in keys)
+
+def _jsonify_js_like(text: str) -> str:
+    """JS풍 객체/배열 문자열을 JSON으로 근사 변환"""
+    s = text
+    # 키에 쌍따옴표 없으면 추가: { key: ... } => { "key": ... }
+    s = re.sub(r'([{\[,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:', r'\1"\2":', s)
+    # ' -> "
+    s = s.replace("'", '"')
+    # NaN/Infinity 계열
+    s = re.sub(r'\bNaN\b', 'null', s)
+    s = re.sub(r'\b-Infinity\b', 'null', s)
+    s = re.sub(r'\bInfinity\b', 'null', s)
+    # 끝 콤마 제거
+    s = re.sub(r',\s*([}\]])', r'\1', s)
+    return s
+
 def extract_workflow_dict(output_str: str):
     """
-    1) 기존 coerce_to_json
+    1) coerce_to_json
     2) ```json ... ``` 코드블록
-    3) 최상위 JSON 안의 answers[*].message.content 내부 JSON
-    4) 실패 시 None
+    3) 최상위 JSON의 answers[*].message.content 내부 JSON
+    4) 로그 텍스트의 'BasicAnalysisTool 결과: [ ... ]' 패턴 재구성 → {'columnStats': [...]}
+    실패 시 (None, None)
     """
     s = sanitize_stdout(output_str)
+
+    m = re.search(r"<<<WORKFLOW_JSON_START>>>\s*([\s\S]*?)\s*<<<WORKFLOW_JSON_END>>>", s)
+    if m:
+        try:
+            obj = json.loads(m.group(1))
+            cand = obj.get("workflow") if isinstance(obj, dict) else None
+            if isinstance(cand, dict):
+                return cand, obj
+        except Exception:
+            pass
+
 
     # 1) 1차: 기존 보정 파서
     top = coerce_to_json(s)
     if isinstance(top, dict):
-        wf = (top.get("workflow") or top.get("result") or top)
-        if isinstance(wf, dict):
-            return wf, top
+        for cand in (top.get("workflow"), top.get("result"), top):
+            if isinstance(cand, dict) and _looks_like_workflow(cand):
+                return cand, top
 
-    # 2) 코드블록 안 JSON
+    # 2) ```json ... ``` 코드블록
     for m in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", s, re.I):
         block = m.group(1).strip()
         try:
             obj = json.loads(block)
-            wf = (obj.get("workflow") or obj.get("result") or obj)
-            if isinstance(wf, dict):
-                return wf, obj
+            for cand in (obj.get("workflow"), obj.get("result"), obj):
+                if isinstance(cand, dict) and _looks_like_workflow(cand):
+                    return cand, obj
         except Exception:
             pass
 
-    # 3) answers[*].message.content 내부 JSON 추출
+    # 3) answers[*].message.content 내부 JSON
     try:
         maybe = json.loads(s)
         if isinstance(maybe, dict):
-            for a in maybe.get("answers") or []:
+            for a in (maybe.get("answers") or []):
                 content = ((a.get("message") or {}).get("content") or "").strip()
-                if not content: 
+                if not content:
                     continue
                 try:
                     obj = json.loads(content)
                 except Exception:
                     obj = coerce_to_json(content.replace('\\"','"'))
                 if isinstance(obj, dict):
-                    wf = (obj.get("workflow") or obj.get("result") or obj)
-                    if isinstance(wf, dict):
-                        return wf, obj
+                    for cand in (obj.get("workflow"), obj.get("result"), obj):
+                        if isinstance(cand, dict) and _looks_like_workflow(cand):
+                            return cand, obj
     except Exception:
         pass
 
+    # 4) 로그 텍스트에서 BasicAnalysisTool 배열만이라도 추출
+    m = re.search(r"BasicAnalysisTool\s*결과\s*:\s*(\[[\s\S]*?\])", s, re.I)
+    if m:
+        arr_text = _jsonify_js_like(m.group(1))
+        try:
+            arr = json.loads(arr_text)
+            if isinstance(arr, list) and arr and isinstance(arr[0], dict):
+                wf = {"columnStats": arr}
+                return wf, {"columnStats": arr}
+        except Exception:
+            pass
+
     return None, None
+
 
 # ------------------------------
 # 생성물 리스트
@@ -456,6 +508,8 @@ async def run_workflow(request: Request, filename: str = Form(None)):
         if not workflow_mapped and preview_images:
             workflow_mapped = {"chartUrls": [img["url"] for img in preview_images]}
             steps = build_steps(workflow_mapped)
+
+        print("[WF] keys:", list((workflow_mapped or {}).keys()))
 
 
         return templates.TemplateResponse("index.html", {

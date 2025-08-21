@@ -32,13 +32,33 @@ export class VisualizationTool {
         if (error) {
           console.error("[VisualizationTool 에러]", stderr);
           reject(stderr);
-        } else {
-          const imageFiles = fs
-            .readdirSync(outputDir)
-            .filter((f) => f.endsWith(".png") && f.includes(String(timestamp)))
-            .map((f) => path.join("outputs", f));
-          resolve(imageFiles);
+          return;
         }
+        // } else {
+        //   const imageFiles = fs
+        //     .readdirSync(outputDir)
+        //     .filter((f) => f.endsWith(".png") && f.includes(String(timestamp)))
+        //     .map((f) => path.join("outputs", f));
+        //   resolve(imageFiles);
+        // }
+        
+        // ① 확장자 기준으로 이미지 수집
+        // ② 이번 실행에 생성된 파일만 포함(수정시각으로 필터) — 타임스탬프 의존 제거
+        const files = fs.readdirSync(outputDir)
+          .filter((f) => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
+          .filter((f) => {
+            try {
+              const stat = fs.statSync(path.join(outputDir, f));
+              return stat.mtimeMs >= timestamp - 2000; // 여유 2초
+            } catch { return false; }
+          });
+
+        // 웹에서 접근 가능한 URL로 변환 (항상 슬래시 사용, 선행 슬래시 포함)
+        const urls = files
+          .map((f) => `/outputs/${f}`)
+          .map((u) => u.replace(/\\/g, "/"));          // 윈도우 역슬래시 → 슬래시
+
+        resolve(urls);
       });
     });
   }

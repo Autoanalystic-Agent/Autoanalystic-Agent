@@ -13,6 +13,8 @@ export class BasicAnalysisTool {
       unique: number;
       mean?: number;
       std?: number;
+      min?: number;
+      max?: number;
     }[];
   }> {
     if (!filePath?.trim()) {
@@ -51,6 +53,8 @@ export class BasicAnalysisTool {
         unique: number;
         mean?: number;
         std?: number;
+        min?: number;
+        max?: number;
       }[] = [];
 
       for (const col of columns) {
@@ -69,9 +73,13 @@ export class BasicAnalysisTool {
           const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
           const variance = numericValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / numericValues.length;
           const std = Math.sqrt(variance);
+          const min = Math.min(...numericValues);
+          const max = Math.max(...numericValues);
 
           stat.mean = parseFloat(mean.toFixed(2));
           stat.std = parseFloat(std.toFixed(2));
+          stat.min  = parseFloat(min.toFixed(2));
+          stat.max  = parseFloat(max.toFixed(2));
         }
 
         columnStats.push(stat);
