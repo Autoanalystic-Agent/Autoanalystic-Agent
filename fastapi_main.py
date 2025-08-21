@@ -174,22 +174,40 @@ app.add_middleware(
 )
 
 # [ADD] 업로드된 CSV에서 상위 N행만 미리보기로 읽어오는 유틸
-def load_head_preview(filename: str, limit: int = 5):
-    cols, rows = [], []
-    if not filename:
-        return cols, rows
-    path = UPLOAD_DIR / filename
+# def load_head_preview(filename: str, limit: int = 5):
+#     cols, rows = [], []
+#     if not filename:
+#         return cols, rows
+#     path = UPLOAD_DIR / filename
+#     try:
+#         with path.open(newline="", encoding="utf-8") as csvfile:
+#             reader = csv.DictReader(csvfile)
+#             cols = reader.fieldnames or []
+#             for i, r in enumerate(reader):
+#                 if i >= limit:
+#                     break
+#                 rows.append(r)
+#     except Exception as e:
+#         print(f"CSV 미리보기 오류: {e}")
+#     return cols, rows
+
+def get_csv_preview(file_path: str):
+    head_columns, head_rows = [], []
+    describe_columns, describe_rows = [], []
+
     try:
-        with path.open(newline="", encoding="utf-8") as csvfile:
-            reader = csv.DictReader(csvfile)
-            cols = reader.fieldnames or []
-            for i, r in enumerate(reader):
-                if i >= limit:
-                    break
-                rows.append(r)
+        import pandas as pd
+        df = pd.read_csv(file_path)
+        head_rows = df.head().to_dict(orient="records")
+        head_columns = df.columns.tolist()
+
+        describe_df = df.describe(include="all").reset_index()
+        describe_rows = describe_df.to_dict(orient="records")
+        describe_columns = describe_df.columns.tolist()
     except Exception as e:
         print(f"CSV 미리보기 오류: {e}")
-    return cols, rows
+
+    return head_columns, head_rows, describe_columns, describe_rows
 
 
 # 생성물 폴더를 /outputs 경로로 정적 서빙
@@ -213,19 +231,27 @@ def list_generated_files() -> List[Dict]:
 async def home(request: Request, filename: str = Query(None)):
     head_columns = []
     head_rows = []
+    describe_columns = []
+    describe_rows = []
 
+    # if filename:
+    #     file_path = UPLOAD_DIR / filename
+    #     try:
+    #         with file_path.open(newline="", encoding="utf-8") as csvfile:
+    #             reader = csv.DictReader(csvfile)
+    #             head_columns = reader.fieldnames or []
+    #             for i, row in enumerate(reader):
+    #                 if i >= 5:
+    #                     break
+    #                 head_rows.append(row)
+    #     except Exception as e:
+    #         print(f"CSV 읽기 오류: {e}")
     if filename:
         file_path = UPLOAD_DIR / filename
-        try:
-            with file_path.open(newline="", encoding="utf-8") as csvfile:
-                reader = csv.DictReader(csvfile)
-                head_columns = reader.fieldnames or []
-                for i, row in enumerate(reader):
-                    if i >= 5:
-                        break
-                    head_rows.append(row)
-        except Exception as e:
-            print(f"CSV 읽기 오류: {e}")
+        if file_path.exists():
+            # ✅ pandas 기반 미리보기 + 기술통계
+            head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(str(file_path))
+
 
     generated_files = list_generated_files()
 
@@ -236,6 +262,8 @@ async def home(request: Request, filename: str = Query(None)):
         "request": request,
         "head_columns": head_columns,
         "head_rows": head_rows,
+        "describe_columns": describe_columns,
+        "describe_rows": describe_rows,
         "current_filename": filename,
         "generated_files": generated_files,
         "preview_images": preview_images,
@@ -339,7 +367,11 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
                 # ========= [ADD] 끝 =========
                 
                 steps = build_steps(workflow_mapped) if workflow_mapped else []  # [ADD]
-                head_columns, head_rows = load_head_preview(filename) if filename else ([], [])
+                if filename:
+                    file_path = UPLOAD_DIR / filename
+                    head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(str(file_path))
+                else:
+                    head_columns, head_rows, describe_columns, describe_rows = [], [], [], []
 
                 return templates.TemplateResponse("index.html", {
                     "request": request,
@@ -352,6 +384,8 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
                     "steps": steps,
                     "head_columns": head_columns,
                     "head_rows": head_rows,
+                    "describe_columns": describe_columns,
+                    "describe_rows": describe_rows,
                     # ============================================
                 })
 
@@ -361,7 +395,11 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
 
         generated_files = list_generated_files()
         preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
-        head_columns, head_rows = load_head_preview(filename) if filename else ([], [])
+        if filename:
+            file_path = UPLOAD_DIR / filename
+            head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(str(file_path))
+        else:
+            head_columns, head_rows, describe_columns, describe_rows = [], [], [], []
 
 
         return templates.TemplateResponse("index.html", {
@@ -375,6 +413,8 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
             "steps": [],
             "head_columns": head_columns,
             "head_rows": head_rows,
+            "describe_columns": describe_columns,
+            "describe_rows": describe_rows,
             # ==============================================
         })
 
