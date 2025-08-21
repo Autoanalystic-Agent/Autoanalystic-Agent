@@ -7,9 +7,6 @@ import os, subprocess, csv, json
 from pathlib import Path
 from typing import List, Dict
 
-# ADD sessions
-import uuid, subprocess, json, re
-
 app = FastAPI()
 
 UPLOAD_DIR = Path("src/uploads")
