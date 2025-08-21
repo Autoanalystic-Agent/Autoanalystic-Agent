@@ -157,7 +157,7 @@
       {% endif %}
 
       {% if describe_rows %}
-        <h3 style="margin-top:16px">describe()</h3>
+        <h3 style="margin-top:16px">통계 요약</h3>
         <table>
           <thead>
             <tr>
@@ -315,7 +315,7 @@
               {% elif s.key == 'train' %}
                 <div class="kv"><span class="muted">추천 모델</span>
                   <span>{{ workflow.mlModelRecommendation.model if workflow.mlModelRecommendation else '—' }}</span></div>
-                <div class="kv"><span class="muted">예상 점수</span>
+                <div class="kv"><span class="muted">정확도 점수</span>
                   <span>
                     {% if workflow.mlModelRecommendation and workflow.mlModelRecommendation.score is number %}
                       {{ (workflow.mlModelRecommendation.score*100)|round(1) }}%
