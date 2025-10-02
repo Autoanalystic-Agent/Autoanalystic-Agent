@@ -6,3 +6,4 @@ xgboost==3.0.4
 seaborn==0.13.2
 pandas
 matplotlib
+python-multipart
