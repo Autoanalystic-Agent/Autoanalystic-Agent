@@ -9,3 +9,5 @@ src/outputs/
 venv13/
 
 .venv/
+
+.gitignore
