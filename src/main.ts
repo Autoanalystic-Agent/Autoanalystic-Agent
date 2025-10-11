@@ -4,18 +4,19 @@ import { OpenAI } from "openai";
 
 // 툴
 import { BasicAnalysisTool } from "./tools/BasicAnalysisTool";
+import { CorrelationTool } from "./tools/CorrelationTool";
 import { SelectorTool } from "./tools/SelectorTool";
 import { VisualizationTool } from "./tools/VisualizationTool";
 import { PreprocessingTool } from "./tools/PreprocessingTool";
 import { WorkflowTool } from "./tools/WorkflowTool";
-import { CorrelationTool } from "./tools/CorrelationTool";
+import { MachineLearningTool } from "./tools/MachineLearningTool";
+// 필요시 CorrelationTool도 import
 
 // 기타
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
 import fs from "fs";
-import { MachineLearningTool } from "./tools/MachineLearningTool";
 
 const originalConsoleLog = console.log;
 console.log = (...args: any[]) => {
@@ -110,11 +111,12 @@ async function main() {
         execute: new MachineLearningTool(),
       },
       {
-        name: "상관 관계 분석 도구",
+        name: "상관관계 도구",
         protocol: "class",
         application: typia.llm.application<CorrelationTool, "chatgpt">(),
         execute: new CorrelationTool(),
-      },
+      },                
+      // CorrelationTool 사용 시 controllers에 추가
     ],
     histories,
   });

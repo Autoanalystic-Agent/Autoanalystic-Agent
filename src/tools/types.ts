@@ -20,6 +20,8 @@ export interface BasicAnalysisOutput {
   columnStats: ColumnStat[];
 }
 
+
+
 // ── CorrelationTool (신규) ─────────────────────────────────
 export interface CorrelationPair {
   col1: string;
@@ -40,18 +42,18 @@ export interface CorrelationOutput {
   highCorrPairs: CorrelationPair[];
 }
 
+
 // ── SelectorTool ───────────────────────────────────────────
 export interface SelectorInput {
   columnStats: ColumnStat[];
+  // Correlation 결과 일부만 받으면 됨
   correlationResults?: {  // 상관관계 분석 결과
     method: string;
     correlationMatrix: Record<string, Record<string, number>>;
     highCorrPairs: CorrelationPair[];
   };
-  hint?: {
-    targetColumn?: string | null;
-    problemType?: ProblemType;
-  };
+  // (선택) Hint
+  hint?: { targetColumn?: string | null; problemType?: ProblemType };
 }
 
 export interface PreprocessStep {
@@ -120,11 +122,6 @@ export interface MachineLearningOutput {
 export interface WorkflowResult {
   filePath: string;
   columnStats: ColumnStat[];
-  correlationResult?: {                       // 상관관계 분석 결과 추가
-    method: string;
-    correlationMatrix: Record<string, Record<string, number>>;
-    highCorrPairs: CorrelationPair[];
-  };
   selectedColumns: string[];
   recommendedPairs: { column1: string; column2: string }[];
   preprocessingRecommendations: PreprocessStep[];
