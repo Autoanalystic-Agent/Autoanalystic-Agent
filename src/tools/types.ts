@@ -22,41 +22,36 @@ export interface BasicAnalysisOutput {
 
 // ── CorrelationTool (신규) ─────────────────────────────────
 export interface CorrelationPair {
-  colA: string;
-  colB: string;
+  col1: string;
+  col2: string;
   corr: number;     // -1..1
-  absCorr: number;  // |corr|
 }
-export interface CorrelationInput {
-  filePath: string;
-  targetColumn?: string | null;
-  numericColumns?: string[];      // 없으면 columnStats 에서 numeric 자동
-  columnStats?: ColumnStat[];     // BasicAnalysis 출력 재사용
-  topN?: number;                  // default 10
-  method?: CorrMethod;            // default 'pearson'
-  corrThresholdForCollinearity?: number; // default 0.85
 
-  data?: Record<string, (number | null | undefined)[]>; // 직접 데이터 주입
-  dropna?: boolean;                                     // 결측치 있으면 행 제거
-  threshold?: number;                                   // high corr 기준 (selector 보강용)
+export interface CorrelationInput {
+  data: Record<string, number[]>;
+  method?: CorrMethod;  // default "pearson"
+  dropna?: boolean;     // default true
+  threshold?: number;   // high correlation 기준, default 0.5
 }
+
 export interface CorrelationOutput {
   method: CorrMethod;
-  usedColumns: string[];
-  matrixPath: string;                    // 저장 파일 경로
-  heatmapPath?: string;                  // 히트맵 이미지(선택)
-  topPairsGlobal: CorrelationPair[];
-  topPairsToTarget?: CorrelationPair[];
-  highCollinearityGroups?: string[][];
+  correlationMatrix: Record<string, Record<string, number>>;
+  highCorrPairs: CorrelationPair[];
 }
 
 // ── SelectorTool ───────────────────────────────────────────
 export interface SelectorInput {
   columnStats: ColumnStat[];
-  // Correlation 결과 일부만 받으면 됨
-  correlation?: Pick<CorrelationOutput, 'topPairsToTarget' | 'highCollinearityGroups'>;
-  // (선택) Hint
-  hint?: { targetColumn?: string | null; problemType?: ProblemType };
+  correlationResults?: {  // 상관관계 분석 결과
+    method: string;
+    correlationMatrix: Record<string, Record<string, number>>;
+    highCorrPairs: CorrelationPair[];
+  };
+  hint?: {
+    targetColumn?: string | null;
+    problemType?: ProblemType;
+  };
 }
 
 export interface PreprocessStep {
@@ -125,6 +120,11 @@ export interface MachineLearningOutput {
 export interface WorkflowResult {
   filePath: string;
   columnStats: ColumnStat[];
+  correlationResult?: {                       // 상관관계 분석 결과 추가
+    method: string;
+    correlationMatrix: Record<string, Record<string, number>>;
+    highCorrPairs: CorrelationPair[];
+  };
   selectedColumns: string[];
   recommendedPairs: { column1: string; column2: string }[];
   preprocessingRecommendations: PreprocessStep[];

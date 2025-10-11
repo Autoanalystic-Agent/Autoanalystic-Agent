@@ -1,77 +1,83 @@
+// agentica 불러오기
 import { Agentica } from "@agentica/core";
 import { OpenAI } from "openai";
+
+// 툴
 import { BasicAnalysisTool } from "./tools/BasicAnalysisTool";
 import { SelectorTool } from "./tools/SelectorTool";
+import { VisualizationTool } from "./tools/VisualizationTool";
+import { PreprocessingTool } from "./tools/PreprocessingTool";
 import { WorkflowTool } from "./tools/WorkflowTool";
+import { CorrelationTool } from "./tools/CorrelationTool";
 
-
+// 기타
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
-import { PreprocessingRequest, PreprocessingTool } from "./tools/PreprocessingTool";
 import fs from "fs";
-import { VisualizationTool } from "./tools/VisualizationTool";
+import { MachineLearningTool } from "./tools/MachineLearningTool";
 
 const originalConsoleLog = console.log;
 console.log = (...args: any[]) => {
-  if (args[0]?.includes('injecting env')) return; // dotenv 관련 메시지만 무시
+  if (args[0]?.includes("injecting env")) return;
   originalConsoleLog(...args);
 };
 
-// .env 파일을 불러온다.
 dotenv.config();
 
-/* ──────────────────────────────────────────────────────────────────────────────
-   [NEW] In-Memory Session Histories (DB 없이 유지)
-   - sessions: sessionKey → AgenticaHistoryJson[]
-   - loadHistories / saveHistories: text/describe만 저장(문서 권장)
-────────────────────────────────────────────────────────────────────────────── */
-type HistoryJson = any; // IAgenticaHistoryJson (타입 단순화)
+// ─────────────────────────────────────────────────────────────
+// 세션 메모리 (간단 버전)
+type HistoryJson = any;
 const SESSIONS = new Map<string, HistoryJson[]>();
-
-function loadHistories(sessionKey: string): HistoryJson[] {
-  return SESSIONS.get(sessionKey) ?? [];
-}
-function saveHistories(sessionKey: string, prompts: any[]) {
-  const prev = SESSIONS.get(sessionKey) ?? [];
+function loadHistories(k: string) { return SESSIONS.get(k) ?? []; }
+function saveHistories(k: string, prompts: any[]) {
+  const prev = SESSIONS.get(k) ?? [];
   const delta = prompts
     .map((p) => (typeof p?.toJSON === "function" ? p.toJSON() : p))
     .filter((h: any) => h?.type === "text" || h?.type === "describe");
-  SESSIONS.set(sessionKey, [...prev, ...delta]);
+  SESSIONS.set(k, [...prev, ...delta]);
 }
-/* ────────────────────────────────────────────────────────────────────────────── */
 
+// ─────────────────────────────────────────────────────────────
+// 채팅 모드 시스템 프롬프트
+const CHAT_SYSTEM = `
+당신은 CSV 분석 챗봇입니다. 아래 도구를 상황에 맞게 사용해 한국어로 간결히 답하세요.
+- BasicAnalysisTool: 컬럼 요약/결측치/기초통계
+- SelectorTool: 컬럼 추천/페어 추천/전처리 권고
+- CorrelationTool: 상관계수/다중공선성/히트맵
+- VisualizationTool: 단/이변량 시각화
+- PreprocessingTool: 결측/스케일링/인코딩 수행
+- MachineLearningTool: 추천 모델 학습/평가
 
-// main 함수에서 실행 모드를 결정
+지침:
+1) 툴이 필요한 질문이면 해당 툴을 호출해 결과를 바탕으로 답하세요.
+2) 원시 JSON은 덤프하지 말고 요약하세요.
+3) 생성된 파일 경로는 백엔드가 UI에 뿌립니다.
+4) 모호하면 간단히 가정하고 진행하세요.
+`;
+
+// ─────────────────────────────────────────────────────────────
 async function main() {
-  const isInteractive = process.argv.includes("--interactive");
-
-  // OpenAI API 설정
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
-
-  // 기본 모드: 명령줄 인자 실행
+  // 인자 파싱
+  // 사용 예) ts-node src/main.ts --mode=workflow "분석해줘" /path/to.csv sessionA
+  //       또는 ts-node src/main.ts --mode=chat "품질에 영향 큰 변수?"
   const args = process.argv.slice(2);
-  const userMessage = args[0] || "";
-  const csvFilePath = args[1];
-  const argSession = args[2];
+  const modeArgIdx = args.findIndex(a => a.startsWith("--mode="));
+  const mode = modeArgIdx >= 0 ? args[modeArgIdx].split("=")[1] : "chat"; // 기본 chat
+  const rest = args.filter((_, i) => i !== modeArgIdx);
 
-  // 세션키 규칙: 사용자/파일 단위로 분리 (없으면 기본값)
-  const sessionKey =
-    argSession ||
-    (csvFilePath ? `local:${csvFilePath}` : "local:default");
+  const userMessage = rest[0] || "";
+  const csvFilePath = rest[1];
+  const argSession = rest[2];
 
-  // 이전 히스토리 복원
+  const sessionKey = argSession || (csvFilePath ? `local:${csvFilePath}` : "local:default");
   const histories = loadHistories(sessionKey);
 
-  // Agentica 에이전트 정의
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
   const agent = new Agentica({
     model: "chatgpt",
-    vendor: {
-      model: "gpt-4.1-mini",
-      api: openai,
-    },
+    vendor: { model: "gpt-4.1-mini", api: openai },
     controllers: [
       {
         name: "기초 분석 도구",
@@ -97,83 +103,68 @@ async function main() {
         application: typia.llm.application<VisualizationTool, "chatgpt">(),
         execute: new VisualizationTool(),
       },
-      // {
-      //   name: "파이프라인 도구",
-      //   protocol: "class",
-      //   application: typia.llm.application<WorkflowTool, "chatgpt">(),
-      //   execute: new WorkflowTool(),
-      // }
+      {
+        name: "머신러닝 도구",
+        protocol: "class",
+        application: typia.llm.application<MachineLearningTool, "chatgpt">(),
+        execute: new MachineLearningTool(),
+      },
+      {
+        name: "상관 관계 분석 도구",
+        protocol: "class",
+        application: typia.llm.application<CorrelationTool, "chatgpt">(),
+        execute: new CorrelationTool(),
+      },
     ],
-    histories, //이전 턴의 대화/요약(Describe)을 복원
+    histories,
   });
 
-  // 인터랙티브 모드(REPL)
-  if (isInteractive) {
+  // ── REPL 보조
+  if (process.argv.includes("--interactive")) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     const ask = () => rl.question("> ", async (line) => {
-      const answers = await agent.conversate(line);
-      saveHistories(sessionKey, answers); // [NEW] 새 히스토리 누적
-
-      // 콘솔 출력(원하면 UI에 맞춰 바꿔도 됨)
-      for (const ans of answers) {
-        if ("text" in ans && ans.text) console.log(ans.text);
-      }
+      const prompt = `### SYSTEM\n${CHAT_SYSTEM}\n\n### USER\n${line}`;
+      const answers = await agent.conversate(prompt);
+      saveHistories(sessionKey, answers);
+      for (const ans of answers) if ("text" in ans && ans.text) console.log(ans.text);
       ask();
     });
-    console.log(`🗂 sessionKey=${sessionKey} (메모리 세션 사용)`);
+    console.log(`🗂 sessionKey=${sessionKey}`);
     return ask();
   }
 
+  // ─────────────────────────────────────────────────────────
+  // 모드 분기
+  // ─────────────────────────────────────────────────────────
 
-  if (csvFilePath) {
-    try {
-      const csvContent = fs.readFileSync(csvFilePath, "utf-8");
-      //console.log(`📁 CSV 파일 읽음: ${csvFilePath}`);
+  if (mode === "workflow") {
+    // 워크플로 모드: 마커 JSON 한 번만 출력
+    if (!csvFilePath) throw new Error("workflow 모드에는 CSV 경로가 필요합니다.");
 
-      // agent에 파일경로와 사용자 메시지 같이 전달해서
-      // LLM이 상황에 맞게 도구를 선택하게 한다.
-      let prompt = userMessage;
-      if (csvFilePath) {
-        prompt += `\n\n[CSV 파일 경로]: ${csvFilePath}`;
-      }
+    // (선택) 파일 확인
+    try { fs.readFileSync(csvFilePath, "utf-8"); } catch { /* ignore */ }
 
-      const answers = await agent.conversate(prompt);
-      saveHistories(sessionKey, answers);
+    const workflow = new WorkflowTool();
+    const result = await workflow.run({ filePath: csvFilePath });
 
-      // console.log("\n✅ Agentica 응답 전체(JSON):");
-      // console.log(JSON.stringify(answers, null, 2));
-
-      // for (const answer of answers) {
-      //   if ("text" in answer) {
-      //     console.log("\n🧠 Agent 응답 메시지:");
-      //     console.log(answer.text);
-      //   }
-      // }
-
-      const workflow = new WorkflowTool();
-      const result = await workflow.run({ filePath: csvFilePath });
-      console.log(result)
-
-    } catch (e) {
-      console.error(`❌ CSV 파일 읽기 실패: ${e}`);
-      return;
-    }
-  } else {
-    // CSV 파일 경로가 없으면 그냥 사용자 메시지만 agent에게 넘긴다.
-    const answers = await agent.conversate(userMessage);
-    saveHistories(sessionKey, answers);
-
-    // console.log("\n✅ Agentica 응답 전체(JSON):");
-    // console.log(JSON.stringify(answers, null, 2));
-
-    for (const answer of answers) {
-      if ("text" in answer) {
-        console.log("\n🧠 Agent 응답 메시지:");
-        console.log(answer.text);
-      }
-    }
+    // FastAPI가 파싱할 유일한 stdout
+    console.log("<<<WORKFLOW_JSON_START>>>");
+    console.log(JSON.stringify({ workflow: result }));
+    console.log("<<<WORKFLOW_JSON_END>>>");
+    return;
   }
 
+  // 기본: chat 모드
+  {
+    let prompt = `### SYSTEM\n${CHAT_SYSTEM}\n\n### USER\n${userMessage}`;
+    if (csvFilePath) prompt += `\n\n### CONTEXT\nCSV_FILE_PATH=${csvFilePath}`;
+
+    const answers = await agent.conversate(prompt);
+    saveHistories(sessionKey, answers);
+
+    // 채팅 답변만 출력 (콘솔 텍스트)
+    for (const ans of answers) if ("text" in ans && ans.text) console.log(ans.text);
+  }
 }
 
 main().catch(console.error);

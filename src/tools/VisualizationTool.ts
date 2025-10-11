@@ -5,7 +5,12 @@ import path from "path";
 
 export class VisualizationTool {
   static readonly description =
-    "선택된 컬럼/페어 기반의 단·이변량 시각화를 생성하고 결과 이미지 경로를 반환합니다.";
+  "선택된 컬럼과 컬럼 페어를 기반으로 단·이변량 시각화를 생성합니다. \
+  연속형 숫자 컬럼은 히스토그램 또는 scatter plot, 범주형 컬럼은 막대그래프 사용. \
+  상관계수 0.7 이상인 컬럼쌍은 scatter plot으로 강조. \
+  차트 개수는 최대 5개, 각 차트에는 컬럼명과 범례를 표시. \
+  결과는 이미지 파일 경로 배열로 반환.";
+
 
   // ✅ 시그니처를 공통 타입으로 교체 (기존 로직은 그대로 유지)
   async run(input: VisualizationInput): Promise<string[]> {
