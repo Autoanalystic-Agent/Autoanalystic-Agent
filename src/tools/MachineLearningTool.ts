@@ -1,29 +1,15 @@
 import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
+import { MachineLearningInput, MachineLearningOutput } from "./types";
 
-export interface MLSelectorResult {
-  targetColumn: string;
-  problemType: "regression" | "classification";
-  mlModelRecommendation: {
-    model: string;
-    score: number;
-    reason: string;
-    params: Record<string, any>;
-  };
-}
 
 export class MachineLearningTool {
   static readonly description =
     "SelectorTool 결과를 기반으로 추천된 ML 모델을 학습하고 평가합니다.";
 
-  async run({
-    filePath,
-    selectorResult,
-  }: {
-    filePath: string; // CSV 파일 경로
-    selectorResult: MLSelectorResult; // SelectorTool 출력값
-  }): Promise<{ mlResultPath: string; reportPath:string; report: string }> {
+  async run(input: MachineLearningInput): Promise<string | MachineLearningOutput> {
+    const { filePath, selectorResult } = input;
 
     const timestamp = Date.now();
     const outputDir = path.join("src/outputs");
@@ -39,23 +25,34 @@ export class MachineLearningTool {
         if (error) {
           console.error("[MachineLearningTool 에러]", stderr);
           reject(stderr);
-        } else {
-          // Python에서 결과 파일명을 stdout으로 출력한다고 가정
-          const mlResultFile = fs
-            .readdirSync(outputDir)
-            .filter((f) => f.endsWith(".pkl") && f.includes(String(timestamp)))[0];
-
-          if (!mlResultFile) {
-            reject("ML 결과 파일을 찾을 수 없습니다.");
-            return;
-          }
-
-          resolve({
-            mlResultPath: path.join("src/outputs", mlResultFile),
-            reportPath: path.join("src/outputs", `${timestamp}_report.txt`),
-            report: stdout.toString().trim(),
-          });
         }
+
+        // 모델 결과 파일(.pkl) 탐색 — 타임스탬프를 파일명에 포함하는 기존 규칙 가정
+        const modelFile = fs
+          .readdirSync(outputDir)
+          .filter((f) => f.endsWith(".pkl") && f.includes(String(timestamp)))[0];
+
+        if (!modelFile) {
+          reject("ML 결과 파일(.pkl)을 찾을 수 없습니다.");
+          return;
+        }
+
+        // 보고서 경로(텍스트/HTML 등) — 파이썬 스크립트가 생성한다고 가정
+        // 필요 시 train_ml_model.py에서 실제 파일명 규칙만 맞추면 됨
+        const reportTxtPath = path.join("src/outputs", `${timestamp}_report.txt`);
+        const reportHtmlPath = path.join("src/outputs", `${timestamp}_report.html`);
+        const reportPath = fs.existsSync(reportHtmlPath) ? reportHtmlPath : reportTxtPath;
+
+        // ✅ 반환 표면: MachineLearningOutput
+        // - FastAPI map_artifacts()는 reportPath를 우선 매핑하여 /outputs 링크를 붙임
+        // - modelPath/rawLog는 추가 정보 (UI에서 안 쓰면 무시됨)
+        const out: MachineLearningOutput = {
+          reportPath,
+          modelPath: path.join("src/outputs", modelFile),
+          rawLog: (stdout || "").toString().trim(),
+        };
+
+        resolve(out);        
       });
     });
   }
