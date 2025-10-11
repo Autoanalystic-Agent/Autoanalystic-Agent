@@ -33,24 +33,35 @@ NPX = "npx.cmd" if os.name == "nt" else "npx"
 
 def run_ts_workflow(file_path: Path, filename: str, message: str = "분석해줘"):
     import shlex, subprocess, os
-    base_args = [NPX, "ts-node", "src/main.ts", message, str(file_path), filename]
+    # ⬇️ 여기: main.ts + --mode=workflow
+    base_args = [NPX, "ts-node", "src/main.ts", "--mode=workflow", message, str(file_path), filename]
     env = os.environ.copy()
     try:
-        # 권장: shell=False + cwd 지정
         proc = subprocess.Popen(
-            base_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            shell=False, text=True, encoding="utf-8", errors="replace",
-            cwd=str(PROJECT_ROOT), env=env
+            base_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(PROJECT_ROOT),
+            env=env,
         )
         stdout, stderr = proc.communicate(timeout=600)
         return proc.returncode, stdout, stderr
     except FileNotFoundError:
-        # 폴백: shell=True 문자열
-        cmd_str = f'{NPX} ts-node src/main.ts {shlex.quote(message)} {shlex.quote(str(file_path))} {shlex.quote(filename)}'
+        cmd_str = f'{NPX} ts-node src/main.ts --mode=workflow {shlex.quote(message)} {shlex.quote(str(file_path))} {shlex.quote(filename)}'
         proc = subprocess.Popen(
-            cmd_str, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            shell=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(PROJECT_ROOT), env=env
+            cmd_str,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(PROJECT_ROOT),
+            env=env,
         )
         stdout, stderr = proc.communicate(timeout=600)
         return proc.returncode, stdout, stderr
@@ -74,21 +85,42 @@ def map_artifacts(workflow: dict) -> dict:
         return workflow
     wf = dict(workflow)
 
+    # 1) 전처리 산출물 URL
     if wf.get("preprocessedFilePath"):
         wf["preprocessedFilePathUrl"] = path_to_outputs_url(wf["preprocessedFilePath"])
 
-    mlp = dict(wf.get("mlResultPath") or {})
-    if mlp.get("mlResultPath"):
+    # 2) ML 결과 표준화
+    #    mlResultPath가 올 수 있는 모든 케이스(dict/str/None/기타)를 안전 처리
+    raw = wf.get("mlResultPath")
+    mlp = {}
+
+    if isinstance(raw, dict):
+        mlp = raw
+    elif isinstance(raw, str):
+        # 문자열만 오면 보고서 경로로 간주
+        mlp = {"reportPath": raw}
+    elif raw is None:
+        mlp = {}
+    else:
+        # 리스트/튜플/기타가 올 수도 있으니 방어
+        try:
+            mlp = dict(raw)  # (key, value) 시퀀스면 변환될 수 있음
+        except Exception:
+            mlp = {}
+
+    # reportPath / mlResultPath 등 경로 키에서 URL 파생 (둘 다 지원)
+    if isinstance(mlp.get("mlResultPath"), str):
         mlp["mlResultUrl"] = path_to_outputs_url(mlp["mlResultPath"])
-    if mlp.get("reportPath"):
+    if isinstance(mlp.get("reportPath"), str):
         mlp["reportUrl"] = path_to_outputs_url(mlp["reportPath"])
-        # 보고서 텍스트가 깨졌으면 UTF-8로 재읽기 시도
+        # 보고서 본문이 '�' 등 깨져있다면 UTF-8 재로드 시도
         if mlp.get("report") and "�" in mlp["report"]:
             try:
                 mlp["report"] = Path(mlp["reportPath"]).read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 pass
-    wf["mlResultPath"] = mlp
+
+    wf["mlResultPath"] = mlp  # 표준화된 형태로 되돌려 넣기
 
     if isinstance(wf.get("chartPaths"), list):
         wf["chartUrls"] = [path_to_outputs_url(p) for p in wf["chartPaths"]]
@@ -458,7 +490,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
     file_path = UPLOAD_DIR / filename
     if not file_path.exists():
         generated_files  = list_generated_files()
-        preview_images = [f for f in gf if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
+        preview_images = [f for f in generated_files if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
         return templates.TemplateResponse("index.html", {
             "request": request, "reply": "⚠️ 업로드된 파일을 찾지 못했습니다.",
             "current_filename": filename, "generated_files": generated_files, "preview_images": preview_images,
@@ -472,7 +504,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
         if code != 0:
             reply = f"❌ 오류: {stderr.strip() or 'unknown error'}"
             generated_files  = list_generated_files()
-            preview_images  = [f for f in gf if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
+            preview_images  = [f for f in generated_files if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
             hc, hr, dc, dr = get_csv_preview(str(file_path))
             return templates.TemplateResponse("index.html", {
                 "request": request, "reply": reply, "current_filename": filename,
@@ -534,30 +566,29 @@ async def run_workflow(request: Request, filename: str = Form(None)):
 # ------------------------------
 @app.post("/chat/", response_class=HTMLResponse)
 async def chat(request: Request, message: str = Form(...), filename: str = Form(None)):
-    # print(f"채팅 요청: message={message}, filename={filename}")
-    # # 함수 위쪽 어딘가에 [ADD]
-    # def _text(x):
-    #     return x.decode("utf-8", "replace").strip() if isinstance(x, (bytes, bytearray)) else (x or "").strip()
-
     if not filename or filename not in session_files:
         reply = "⚠️ 파일이 유효하지 않습니다. CSV를 먼저 업로드해주세요."
         return templates.TemplateResponse("index.html", {"request": request, "reply": reply})
 
-    
     file_path = session_files[filename]
     chat_history = chat_histories.get(filename, [])
     chat_history.append({"role": "user", "content": message})
 
     try:
-        cmd = ["npx", "ts-node", "src/main.ts", message, file_path, filename]
+        # ⬇️ 여기: --mode=chat + CONTEXT (파일경로, 세션키)
+        cmd = [NPX, "ts-node", "src/main.ts", "--mode=chat", message, file_path, filename]
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            shell=True
+            shell=False,                 # 권장
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(PROJECT_ROOT),
         )
         stdout, stderr = proc.communicate(timeout=600)
-        output_str = stdout.decode("utf-8").strip()
+        output_str = stdout.strip()
 
         parsed_json = coerce_to_json(output_str)
         if parsed_json and "answers" in parsed_json:
