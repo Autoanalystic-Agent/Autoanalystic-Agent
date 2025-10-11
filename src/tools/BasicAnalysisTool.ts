@@ -1,22 +1,18 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import * as csv from "csv-parse/sync";
+import { BasicAnalysisInput, BasicAnalysisOutput } from "./types";
+
 
 export class BasicAnalysisTool {
   name = "기초 구조/결측치/통계 분석 도구";
 
-  async run({ filePath }: { filePath: string }): Promise<{
-    columnStats: {
-      column: string;
-      dtype: string;
-      missing: number;
-      unique: number;
-      mean?: number;
-      std?: number;
-      min?: number;
-      max?: number;
-    }[];
-  }> {
+  // [CHANGED] 시그니처: (익명 객체) → BasicAnalysisInput / 반환 → BasicAnalysisOutput
+  async run(input: BasicAnalysisInput): Promise<BasicAnalysisOutput> {
+    // [ADDED] input에서 filePath 추출
+    const { filePath } = input;
+
+
     if (!filePath?.trim()) {
       throw new Error("CSV 파일 경로가 제공되지 않았습니다.");
     }
@@ -46,28 +42,26 @@ export class BasicAnalysisTool {
       const columns = Object.keys(records[0]);
       const totalRows = records.length;
 
-      const columnStats: {
-        column: string;
-        dtype: string;
-        missing: number;
-        unique: number;
-        mean?: number;
-        std?: number;
-        min?: number;
-        max?: number;
-      }[] = [];
+      const columnStats: BasicAnalysisOutput["columnStats"] = [];
+
 
       for (const col of columns) {
         const values = records.map(row => row[col]);
         const numericValues = values.map(v => parseFloat(v)).filter(v => !isNaN(v));
         const uniqueValues = new Set(values.filter(v => v !== "" && v != null));
+        const dtype =
+          numericValues.length > 0
+            ? /* 'numeric' */ "number"
+            : /* 'categorical' */ "string";
 
-        const stat: any = {
+        // [KEPT] 기존 통계 계산 로직 유지
+        const item: any = {
           column: col,
-          dtype: numericValues.length > 0 ? "number" : "string",
-          missing: values.filter(v => v === "" || v == null).length,
+          dtype,
+          missing: values.filter((v) => v === "" || v == null).length,
           unique: uniqueValues.size,
         };
+
 
         if (numericValues.length > 0) {
           const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
@@ -76,13 +70,13 @@ export class BasicAnalysisTool {
           const min = Math.min(...numericValues);
           const max = Math.max(...numericValues);
 
-          stat.mean = parseFloat(mean.toFixed(2));
-          stat.std = parseFloat(std.toFixed(2));
-          stat.min  = parseFloat(min.toFixed(2));
-          stat.max  = parseFloat(max.toFixed(2));
+          item.mean = parseFloat(mean.toFixed(2));
+          item.std = parseFloat(std.toFixed(2));
+          item.min = parseFloat(min.toFixed(2));
+          item.max = parseFloat(max.toFixed(2));
         }
 
-        columnStats.push(stat);
+        columnStats.push(item);
       }
 
       console.log(" BasicAnalysisTool 결과:", columnStats);

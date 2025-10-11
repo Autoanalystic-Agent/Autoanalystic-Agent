@@ -2,6 +2,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
+import { PreprocessingInput, PreprocessingOutput, PreprocessStep } from "./types";
 
 type Data = Record<string, string | number>[];
 
@@ -62,39 +63,41 @@ export class PreprocessingTool {
         return count + (val === null || val === "" ? 1 : 0);
       }, 0);
       this.data = this.data.filter(row => row[column] !== null && row[column] !== "");
+      return `컬럼 ${column} 결측치 처리 완료 (${strategy}), 처리 개수: ${missingCount}`;
+
     } 
-    else {
-      const colValues = this.data
-        .map(row => row[column])
-        .filter(v => v !== null && v !== "");
-      if (colValues.length === 0) return `컬럼 ${column}: 결측치가 없거나 데이터 없음`;
+    
+    const colValues = this.data
+      .map(row => row[column])
+      .filter(v => v !== null && v !== "");
+    if (colValues.length === 0) return `컬럼 ${column}: 결측치가 없거나 데이터 없음`;
 
-      const parsedValues = colValues
-        .map(v => typeof v === "string" ? parseFloat(v) : v)
-        .filter(v => !isNaN(v));
+    const parsedValues = colValues
+      .map(v => typeof v === "string" ? parseFloat(v) : v)
+      .filter(v => !isNaN(v));
 
-      if (parsedValues.length === 0) return `컬럼 ${column}: 숫자형 데이터 없음`;
+    if (parsedValues.length === 0) return `컬럼 ${column}: 숫자형 데이터 없음`;
 
-      let fillValue: number | string;
-      if (strategy === "mean") {
-        fillValue = mean(parsedValues);
-      } else {
-        const freq: Record<string, number> = {};
-        for (const v of colValues) {
-          const key = String(v);
-          freq[key] = (freq[key] || 0) + 1;
-        }
-        fillValue = Object.entries(freq).reduce((a, b) => a[1] >= b[1] ? a : b)[0];
+    let fillValue: number | string;
+    if (strategy === "mean") {
+      fillValue = mean(parsedValues);
+    } else {
+      const freq: Record<string, number> = {};
+      for (const v of colValues) {
+        const key = String(v);
+        freq[key] = (freq[key] || 0) + 1;
       }
-
-      this.data = this.data.map(row => {
-        if (row[column] === null || row[column] === "") {
-          missingCount++;
-          row[column] = fillValue;
-        }
-        return row;
-      });
+      fillValue = Object.entries(freq).reduce((a, b) => a[1] >= b[1] ? a : b)[0];
     }
+
+    this.data = this.data.map(row => {
+      if (row[column] === null || row[column] === "") {
+        missingCount++;
+        row[column] = fillValue;
+      }
+      return row;
+    });
+    
 
     return `컬럼 ${column} 결측치 처리 완료 (${strategy}), 처리 개수: ${missingCount}`;
   }
@@ -139,16 +142,15 @@ export class PreprocessingTool {
         return row;
       });
     } 
-    else {
-      this.data = this.data.map(row => {
-        const encoded: Record<string, string | number> = { ...row };
-        for (const val of unique) {
-          encoded[`${column}_${val}`] = row[column] === val ? 1 : 0;
-        }
-        delete encoded[column];
-        return encoded;
-      });
-    }
+
+    this.data = this.data.map(row => {
+      const encoded: Record<string, string | number> = { ...row };
+      for (const val of unique) {
+        encoded[`${column}_${val}`] = row[column] === val ? 1 : 0;
+      }
+      delete encoded[column];
+      return encoded;
+    });
 
     return `컬럼 ${column} 인코딩 완료 (${method})`;
   }
@@ -164,9 +166,9 @@ export class PreprocessingTool {
       this.data = parse(file, { columns: true, skip_empty_lines: true }) as Data;
     } catch (err) {
       return {
-      messages: [`파일을 읽을 수 없습니다: ${(err as Error).message}`],
-      preprocessedFilePath: ""
-    };
+        messages: [`파일을 읽을 수 없습니다: ${(err as Error).message}`],
+        preprocessedFilePath: ""
+      };
     }
 
     const results: string[] = [];

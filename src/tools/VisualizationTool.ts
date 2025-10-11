@@ -1,21 +1,17 @@
 import { exec } from "child_process";
+import { VisualizationInput } from "./types";
 import fs from "fs";
 import path from "path";
 
 export class VisualizationTool {
   static readonly description =
-    "SelectorTool 결과를 기반으로 추천된 컬럼 페어를 시각화합니다.";
+    "선택된 컬럼/페어 기반의 단·이변량 시각화를 생성하고 결과 이미지 경로를 반환합니다.";
 
-  async run({
-    filePath,
-    selectorResult,
-  }: {
-    filePath: string; // csv 파일 경로
-    selectorResult: { // selectorTool의 출력값
-      selectedColumns: string[];
-      recommendedPairs: { column1: string; column2: string }[];
-    };
-  }): Promise<string[]> {
+  // ✅ 시그니처를 공통 타입으로 교체 (기존 로직은 그대로 유지)
+  async run(input: VisualizationInput): Promise<string[]> {
+    // ✅ 기존 구조분해 + correlation(선택) 추가
+    const { filePath, selectorResult, correlation } = input;
+
     // 1. 출력 폴더 생성
     const timestamp = Date.now();
     const outputDir = path.join("src/outputs");
@@ -57,6 +53,14 @@ export class VisualizationTool {
         const urls = files
           .map((f) => `/outputs/${f}`)
           .map((u) => u.replace(/\\/g, "/"));          // 윈도우 역슬래시 → 슬래시
+
+        // ✅ CorrelationTool이 생성한 히트맵이 있으면 함께 반환 목록에 포함
+        //    (예: correlation.heatmapPath === "src/outputs/corr_heatmap_123.png")
+        if (correlation?.heatmapPath && fs.existsSync(correlation.heatmapPath)) {
+          const basename = path.basename(correlation.heatmapPath);
+          const webUrl = `/outputs/${basename}`.replace(/\\/g, "/");
+          if (!urls.includes(webUrl)) urls.push(webUrl);
+        }
 
         resolve(urls);
       });
