@@ -19,7 +19,8 @@
  *   threshold: 0.7
  * });
  */
-
+import * as fs from "fs";
+import * as path from "path";
 import { CorrelationInput, CorrelationOutput } from "./types";
 
 export class CorrelationTool {
@@ -62,8 +63,14 @@ export class CorrelationTool {
    * 상관관계 계산 실행 메서드
    */
   public async run(input: CorrelationInput): Promise<CorrelationOutput> {
-    const { data, method = "pearson", dropna = true, threshold = 0.5 } = input;
+    const { filePath , data, method = "pearson", dropna = true, threshold = 0.5, sessionId} = input;
     console.log("\n[CorrelationTool] 상관관계 계산 시작");
+
+    const timestamp = Date.now();
+    const outputDir = input.sessionId
+              ? path.join(process.cwd(), "src/outputs", input.sessionId) // 세션별 출력
+              : path.join(process.cwd(), "src/outputs");
+    fs.mkdirSync(outputDir, { recursive: true });
 
     // 1️. 입력 데이터 유효성 검사
     if (!data || Object.keys(data).length === 0)
@@ -100,6 +107,16 @@ export class CorrelationTool {
 
     console.log(`[CorrelationTool 완료] method=${method}`);
     console.log("상관 높은 컬럼쌍:", highCorrPairs);
+    // 5) 산출물 저장 (항상 저장)
+    try {
+      this.saveCorrelationArtifacts(outputDir, filePath, {
+        method,
+        correlationMatrix,
+        highCorrPairs,
+      });
+    } catch (e: any) {
+      console.log(`[CorrelationTool 저장 실패] ${e?.message ?? e}`);
+    }
 
     return {
       method,
@@ -206,4 +223,34 @@ export class CorrelationTool {
   private mean(arr: number[]): number {
     return arr.reduce((sum, v) => sum + v, 0) / arr.length;
   }
+  private saveCorrelationArtifacts(
+      outDir: string,
+      filePath: string,
+      corr: CorrelationOutput
+    ): { matrixCsv: string; pairsJson: string } {
+      // outDir은 run()에서 이미 mkdirSync 완료
+      const base = path.parse(filePath).name;
+      const matrixCsv = path.join(outDir, `${base}.corr_matrix.csv`);
+      const pairsJson = path.join(outDir, `${base}.corr_pairs.json`);
+
+      const cols = Object.keys(corr.correlationMatrix);
+
+      // CSV: 첫 행 헤더, 이후 각 행
+      const header = ["", ...cols].join(",");
+      const rows = cols.map((r) => {
+        const vals = cols.map((c) => {
+          const v = corr.correlationMatrix[r]?.[c];
+          return typeof v === "number" && Number.isFinite(v) ? v.toFixed(3) : "";
+        });
+        return [r, ...vals].join(",");
+      });
+
+      fs.writeFileSync(matrixCsv, [header, ...rows].join("\n"), "utf-8");
+      fs.writeFileSync(pairsJson, JSON.stringify(corr.highCorrPairs, null, 2), "utf-8");
+
+      console.log(`[CorrelationTool 저장] ${matrixCsv}`);
+      console.log(`[CorrelationTool 저장] ${pairsJson}`);
+
+      return { matrixCsv, pairsJson };
+    }
 }

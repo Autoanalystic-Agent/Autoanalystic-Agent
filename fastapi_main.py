@@ -138,17 +138,6 @@ def build_steps(wf: dict, corr_has_table: bool = False) -> list[dict]:  # [CHANG
     steps.append(st("train",     "6) MachineLearningTool",          ml_ok))
     return steps
 
-def looks_like_dump(text: str) -> bool:
-    if not text:
-        return False
-    needles = [
-        "[WorkflowTool", "BasicAnalysisTool", "SelectorTool",
-        "VisualizationTool", "Preprocess", "MachineLearning",
-        "columnStats", "recommendedPairs", "preprocessedFilePath",
-        "mlResultPath", "reportPath", "chartPaths", "dtype:", "column:"
-    ]
-    return any(n in text for n in needles) or len(text) > 600
-
 def coerce_to_json(s: str):
     """
     로그에 여러 JSON-유사 블록이 섞여 있을 때,
@@ -484,15 +473,7 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
         "corr": {"headers": [], "rows": []},  # [NEW]
     })
 
-# [NEW] 업로드 폴더 내 Correlation CSV 경로 추정 + 로딩 -------------------------
-def _find_corr_csv_for(filename: str) -> str | None:  # [NEW]
-    """
-    WorkflowTool이 uploads/artifacts/<base>.corr_matrix.csv 로 저장했다고 가정.
-    """
-    base = Path(filename).stem
-    guess = UPLOAD_DIR / "artifacts" / f"{base}.corr_matrix.csv"
-    return str(guess) if guess.exists() else None
-
+# [NEW] 업로드 폴더 내 Correlation CSV 경로 추정 + 로딩 ------------------------
 def _load_corr_csv(csv_path: str | None) -> dict:  # [NEW]
     if not csv_path:
         return {"headers": [], "rows": []}
@@ -577,9 +558,21 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
         workflow_mapped = map_artifacts(wf_raw, sessionId) if isinstance(wf_raw, dict) else None
 
         # [NEW] Correlation CSV 로드 → 템플릿 전달 + steps 반영
-        corr_csv_path = _find_corr_csv_for(filename)          # [NEW]
+        corr_csv_path = None
+        root = OUTPUT_DIR / sessionId                      # ← src/outputs/<sessionId>
+        if root.exists():
+            # 1) 파일명과 딱 맞는 것 우선
+            exact = root / f"{Path(filename).stem}.corr_matrix.csv"
+            if exact.exists():
+                corr_csv_path = str(exact)
+            else:
+                # 2) 없으면 폴더 전체에서 패턴 검색
+                for q in root.rglob("*corr_matrix.csv"):
+                    corr_csv_path = str(q)
+                    break
         corr = _load_corr_csv(corr_csv_path)                  # [NEW]
         corr_has_table = bool(corr.get("headers"))            # [NEW]
+
 
         steps = build_steps(workflow_mapped, corr_has_table) if workflow_mapped else []  # [CHANGED]
 

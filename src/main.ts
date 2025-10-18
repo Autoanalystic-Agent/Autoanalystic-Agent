@@ -190,7 +190,7 @@ async function main() {
     try { fs.readFileSync(csvFilePath, "utf-8"); } catch { /* ignore */ }
 
     const workflow = new WorkflowTool();
-    const result = await workflow.run({ filePath: csvFilePath , sessionId});
+    const result = await workflow.run({ filePath: csvFilePath }, {sessionId});
 
     // FastAPI가 파싱할 유일한 stdout
     console.log("<<<WORKFLOW_JSON_START>>>");

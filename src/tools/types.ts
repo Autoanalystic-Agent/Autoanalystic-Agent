@@ -30,6 +30,8 @@ export interface CorrelationPair {
 }
 
 export interface CorrelationInput {
+  filePath: string;
+  sessionId?: string;  
   data: Record<string, number[]>;
   method?: CorrMethod;  // default "pearson"
   dropna?: boolean;     // default true
