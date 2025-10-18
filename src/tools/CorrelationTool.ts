@@ -24,7 +24,40 @@ import { CorrelationInput, CorrelationOutput } from "./types";
 
 export class CorrelationTool {
   static readonly description = "숫자형 컬럼 간 상관계수를 계산하고, threshold 이상인 컬럼 쌍을 반환";
+  readonly prompt = `
+[SYSTEM]
+너는 상관분석 전용 도구다. 입력된 연속형 데이터로 상관행렬과 상관 상위 페어를 계산한다.
+출력은 반드시 JSON 한 줄만.
 
+[DEVELOPER]
+입력(이미 파싱된):
+- method: {{method|"pearson"|"spearman"|"kendall"}}
+- dropna: {{dropna|true/false}}
+- threshold: {{threshold|0.5~0.95}}
+- data: Record<string, number[]>
+
+해야 할 일:
+1) 각 컬럼쌍에 대해 {{method}} 상관계수 계산(유효쌍만).
+2) correlationMatrix를 대칭/대각1.0으로 보정.
+3) |corr| >= {{threshold}} 인 상위 페어 배열(highCorrPairs) 생성(내림차순).
+
+출력 스키마(CorrelationOutput):
+{
+  "method": "pearson" | "spearman" | "kendall",
+  "correlationMatrix": { [col: string]: { [col: string]: number } },
+  "highCorrPairs": [ { "col1": string, "col2": string, "corr": number } ]
+}
+
+에러/결측 처리:
+- 전체 NaN 또는 유효한 숫자쌍이 없으면 빈 행렬/빈 페어 반환.
+- 절대 로그 문자열을 출력하지 말 것.
+
+[USER]
+분석 파라미터:
+- method={{method}}, dropna={{dropna}}, threshold={{threshold}}
+- data 컬럼 수={{colCount}}, 행 길이 균일성={{isAligned}}
+  `.trim();
+  
   /**
    * 상관관계 계산 실행 메서드
    */

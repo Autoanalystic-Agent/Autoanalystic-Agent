@@ -6,18 +6,6 @@ import { PreprocessingInput, PreprocessingOutput, PreprocessStep } from "./types
 
 type Data = Record<string, string | number>[];
 
-export interface PreprocessingRequest {
-  filePath: string; 
-  recommendations: PreprocessingRecommendation[];
-}
-
-//export type PreprocessingResponse = string[];
-
-export interface PreprocessingResponse {
-  messages: string[];
-  preprocessedFilePath: string;
-}
-
 function mean(values: number[]): number {
   if (values.length === 0) return NaN;
   return values.reduce((a, b) => a + b, 0) / values.length;
@@ -43,6 +31,11 @@ function quantileSeq(values: number[], q: number): number {
   }
 }
 
+// [FIX] 결측치 판정(기존 로직 확장: undefined/공백문자열 포함)
+const isMissing = (v: unknown) =>
+  v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+
+
 export interface PreprocessingRecommendation {
   column: string;
   fillna?: "drop" | "mean" | "mode";
@@ -51,6 +44,38 @@ export interface PreprocessingRecommendation {
 }
 
 export class PreprocessingTool {
+  /**
+   * (프롬프트 추가) — 로직/타입/메서드는 변경하지 않음
+   * LLM/에이전트가 이 도구의 목적과 입출력, 제약을 이해하도록 돕는 설명 문자열입니다.
+   */
+  readonly prompt = `
+[SYSTEM]
+너는 CSV를 받아 지정된 전처리를 수행해 새 CSV를 저장하는 도구다.
+출력은 반드시 JSON 한 줄.
+
+[DEVELOPER]
+입력:
+- filePath
+- recommendations: PreprocessStep[]
+
+규칙:
+- fillna: drop → 행 제거 / mean|mode → 해당 컬럼 대치
+- normalize: minmax 또는 zscore
+- encoding: onehot 또는 label (문자열만)
+- 원본은 보존, 새 CSV를 OUTPUT_DIR에 저장
+
+출력(PreprocessingOutput):
+{ "preprocessedFilePath"?: string, "messages"?: string[] }
+
+제약:
+- 메시지는 간결한 작업 로그(문장 1줄씩).
+- 실패 항목은 메시지에만 남기고 가능한 작업은 계속 진행.
+
+[USER]
+입력 파일: {{filePath}}, 단계 수: {{recommendations.length}}
+  `.trim();
+
+  
   private data: Data = [];
 
   private handleMissingColumn(params: { column: string; strategy: "drop" | "mean" | "mode" }): string {
@@ -58,25 +83,22 @@ export class PreprocessingTool {
     let missingCount = 0;
 
     if (strategy === "drop") {
-      missingCount = this.data.reduce((count, row) => {
-        const val = row[column];
-        return count + (val === null || val === "" ? 1 : 0);
-      }, 0);
-      this.data = this.data.filter(row => row[column] !== null && row[column] !== "");
+      // [FIX] undefined/공백문자열 포함 처리가능
+      missingCount = this.data.reduce((count, row) => count + (isMissing(row[column]) ? 1 : 0), 0); // [FIX]
+      this.data = this.data.filter(row => !isMissing(row[column])); // [FIX]
       return `컬럼 ${column} 결측치 처리 완료 (${strategy}), 처리 개수: ${missingCount}`;
-
-    } 
+    }
     
     const colValues = this.data
       .map(row => row[column])
-      .filter(v => v !== null && v !== "");
+      .filter(v => !isMissing(v)); // [FIX]
     if (colValues.length === 0) return `컬럼 ${column}: 결측치가 없거나 데이터 없음`;
 
     const parsedValues = colValues
       .map(v => typeof v === "string" ? parseFloat(v) : v)
       .filter(v => !isNaN(v));
 
-    if (parsedValues.length === 0) return `컬럼 ${column}: 숫자형 데이터 없음`;
+    if (parsedValues.length === 0 && strategy === "mean") return `컬럼 ${column}: 숫자형 데이터 없음`; // [FIX]
 
     let fillValue: number | string;
     if (strategy === "mean") {
@@ -91,7 +113,7 @@ export class PreprocessingTool {
     }
 
     this.data = this.data.map(row => {
-      if (row[column] === null || row[column] === "") {
+      if (isMissing(row[column])) { // [FIX]
         missingCount++;
         row[column] = fillValue;
       }
@@ -120,9 +142,9 @@ export class PreprocessingTool {
       if (typeof val !== "number" || isNaN(val)) return row;
 
       if (method === "zscore") {
-        val = (val - mu) / sigma;
+        val = sigma === 0 ? 0 : (val - mu) / sigma; // [FIX] 분산 0 보호
       } else {
-        val = (val - minVal) / (maxVal - minVal);
+        val = maxVal === minVal ? 0 : (val - minVal) / (maxVal - minVal); // [FIX] 범위 0 보호
       }
       row[column] = val;
       return row;
@@ -141,6 +163,8 @@ export class PreprocessingTool {
         row[column] = labelMap[row[column]];
         return row;
       });
+      return `컬럼 ${column} 인코딩 완료 (${method})`; // [FIX] label 수행 시 즉시 종료(원-핫 추가 방지)
+
     } 
 
     this.data = this.data.map(row => {
@@ -155,7 +179,7 @@ export class PreprocessingTool {
     return `컬럼 ${column} 인코딩 완료 (${method})`;
   }
 
-  public async runPreprocessing(request: PreprocessingRequest): Promise<PreprocessingResponse> {
+  public async runPreprocessing(request: PreprocessingInput): Promise<PreprocessingOutput> { // [FIX]
     // CSV 로딩
     const defaultDir = path.join(process.cwd(), "src/uploads");
     const cleanedFilePath = request.filePath.replace(/^.*uploads[\\/]/, "");
@@ -173,24 +197,27 @@ export class PreprocessingTool {
 
     const results: string[] = [];
 
-    for (const rec of request.recommendations) {
+    for (const rec of request.recommendations as PreprocessStep[]) { // [FIX]
       if (rec.fillna) {
         results.push(this.handleMissingColumn({ column: rec.column, strategy: rec.fillna }));
       }
     }
-    for (const rec of request.recommendations) {
+    for (const rec of request.recommendations as PreprocessStep[]) {
       if (rec.normalize) {
         results.push(this.scaleColumn({ column: rec.column, method: rec.normalize }));
       }
     }
-    for (const rec of request.recommendations) {
+    for (const rec of request.recommendations as PreprocessStep[]) {
       if (rec.encoding) {
         results.push(this.encodeColumn({ column: rec.column, method: rec.encoding }));
       }
     }
     
     const outputFileName = `preprocessed_${cleanedFilePath}`;
-    const outputPath = path.join(process.cwd(), "src/outputs", outputFileName);
+    const outputDir = path.join(process.cwd(), "src/outputs"); // [FIX]
+    await fs.mkdir(outputDir, { recursive: true });            // [FIX]
+    const outputPath = path.join(outputDir, outputFileName);   // [FIX]
+    
     const csv = stringify(this.data, { header: true });
     await fs.writeFile(outputPath, csv, "utf-8");
 

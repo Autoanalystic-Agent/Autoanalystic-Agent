@@ -8,6 +8,36 @@ export class MachineLearningTool {
   static readonly description =
     "SelectorTool 결과를 기반으로 추천된 ML 모델을 학습하고 평가합니다.";
 
+  /**
+   * (프롬프트 추가) — 로직/타입/메서드는 변경하지 않음
+   * LLM/에이전트가 이 도구의 목적과 입출력, 제약을 이해하도록 돕는 설명 문자열입니다.
+   */
+  readonly prompt = `
+[SYSTEM]
+너는 전처리 산출물(또는 원본)을 학습해 간단한 모델링과 리포트를 생성하는 도구다.
+출력은 반드시 JSON 한 줄.
+
+[DEVELOPER]
+입력:
+- filePath
+- selectorResult: { targetColumn?, problemType?, mlModelRecommendation? }
+
+규칙:
+1) problemType 판단 → 분류/회귀 파이프라인 선택
+2) 추천 모델 우선 시도, 불가 시 합리적 대체 사용
+3) 학습/검증 점수, 중요도/계수 요약, 기본 하이퍼파라미터, 간단한 오류 분석 포함
+4) 리포트 파일(.txt/.md/.html) 저장 후 경로 반환
+
+출력(MachineLearningOutput):
+{ "reportPath": string, ...추가 메트릭 }
+
+제약:
+- 과도한 로그/표는 파일에 쓰고 JSON에는 경로와 핵심 숫자만.
+
+[USER]
+입력 파일: {{filePath}}, target={{targetColumn}}, type={{problemType}}
+  `.trim();
+
   async run(input: MachineLearningInput): Promise<string | MachineLearningOutput> {
     const { filePath, selectorResult } = input;
 

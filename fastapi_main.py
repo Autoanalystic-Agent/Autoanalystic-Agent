@@ -17,14 +17,9 @@ OUTPUT_DIR = Path("src/outputs")    # 생성물이 저장되는 폴더
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-
-
 # === Add: path → /outputs URL 매핑 유틸 ===
 # [ADD] 단계(툴)별 상태·아티팩트 정리 유틸
 import re
-
-
-
 
 # ADD
 # 파일 상단 import 아래에 추가
@@ -126,19 +121,20 @@ def map_artifacts(workflow: dict) -> dict:
         wf["chartUrls"] = [path_to_outputs_url(p) for p in wf["chartPaths"]]
     return wf
 
-def build_steps(wf: dict) -> list[dict]:
+def build_steps(wf: dict, corr_has_table: bool = False) -> list[dict]:  # [CHANGED]
     """워크플로 dict에서 단계(툴)별 완료 여부를 계산"""
     def st(key, title, ok):
         return {"key": key, "title": title, "status": "done" if ok else "skipped"}
 
     steps = []
     steps.append(st("basic",     "1) BasicAnalysisTool",            bool(wf.get("columnStats"))))
-    steps.append(st("selector",  "2) SelectorTool",                 bool(wf.get("selectedColumns") or wf.get("recommendedPairs") or wf.get("preprocessingRecommendations"))))
-    steps.append(st("visual",    "3) VisualizationTool",            bool(wf.get("chartUrls"))))
-    steps.append(st("preprocess","4) PreprocessExecutorTool",       bool(wf.get("preprocessedFilePathUrl"))))
+    steps.append(st("corr",      "2) Correlation",                bool(corr_has_table)))  # [NEW]
+    steps.append(st("selector",  "3) SelectorTool",                 bool(wf.get("selectedColumns") or wf.get("recommendedPairs") or wf.get("preprocessingRecommendations"))))
+    steps.append(st("visual",    "4) VisualizationTool",            bool(wf.get("chartUrls"))))
+    steps.append(st("preprocess","5) PreprocessExecutorTool",       bool(wf.get("preprocessedFilePathUrl"))))
     ml_ok = bool( (wf.get("mlModelRecommendation") and wf["mlModelRecommendation"].get("model")) or
                   (wf.get("mlResultPath") and (wf["mlResultPath"].get("mlResultUrl") or wf["mlResultPath"].get("reportUrl"))) )
-    steps.append(st("train",     "5) MachineLearningTool",          ml_ok))
+    steps.append(st("train",     "6) MachineLearningTool",          ml_ok))
     return steps
 
 def looks_like_dump(text: str) -> bool:
@@ -442,6 +438,7 @@ async def home(request: Request, sessionId: str = Query(None)):
         "current_filename": sessionId, # filename
         "generated_files": generated_files,
         "preview_images": preview_images,
+        "corr": {"headers": [], "rows": []},  # [NEW]
     })
 
 
@@ -471,7 +468,34 @@ async def upload_csv(request: Request, file: UploadFile = File(...)):
         "head_rows": head_rows,
         "describe_columns": describe_columns,
         "describe_rows": describe_rows,
+        "corr": {"headers": [], "rows": []},  # [NEW]
     })
+
+# [NEW] 업로드 폴더 내 Correlation CSV 경로 추정 + 로딩 -------------------------
+def _find_corr_csv_for(filename: str) -> str | None:  # [NEW]
+    """
+    WorkflowTool이 uploads/artifacts/<base>.corr_matrix.csv 로 저장했다고 가정.
+    """
+    base = Path(filename).stem
+    guess = UPLOAD_DIR / "artifacts" / f"{base}.corr_matrix.csv"
+    return str(guess) if guess.exists() else None
+
+def _load_corr_csv(csv_path: str | None) -> dict:  # [NEW]
+    if not csv_path:
+        return {"headers": [], "rows": []}
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        if not rows:
+            return {"headers": [], "rows": []}
+        headers = rows[0][1:]
+        body = [{"row": r[0], "vals": r[1:]} for r in rows[1:]]
+        return {"headers": headers, "rows": body}
+    except Exception as e:
+        print(f"[CORR] read error: {e}")
+        return {"headers": [], "rows": []}
+# ---------------------------------------------------------------------------
 
 
 # [ADD] 업로드된 파일로 워크플로우를 한 번에 실행하는 엔드포인트
@@ -486,6 +510,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
             "current_filename": None, "generated_files": generated_files, "preview_images": preview_images,
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
+            "corr": {"headers": [], "rows": []},
         })
     file_path = UPLOAD_DIR / filename
     if not file_path.exists():
@@ -496,6 +521,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
             "current_filename": filename, "generated_files": generated_files, "preview_images": preview_images,
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
+            "corr": {"headers": [], "rows": []},
         })
 
     # 워크플로우 실행
@@ -510,6 +536,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
                 "request": request, "reply": reply, "current_filename": filename,
                 "generated_files": generated_files, "preview_images": preview_images, "workflow": None, "steps": [],
                 "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr,
+                "corr": {"headers": [], "rows": []},
             })
 
         # JSON 파싱 → 카드 데이터 구성
@@ -529,7 +556,12 @@ async def run_workflow(request: Request, filename: str = Form(None)):
 
         # 매핑/스텝 구성
         workflow_mapped = map_artifacts(wf_raw) if isinstance(wf_raw, dict) else None
-        steps = build_steps(workflow_mapped) if workflow_mapped else []
+        # [NEW] Correlation CSV 로드 → 템플릿 전달 + steps 반영
+        corr_csv_path = _find_corr_csv_for(filename)          # [NEW]
+        corr = _load_corr_csv(corr_csv_path)                  # [NEW]
+        corr_has_table = bool(corr.get("headers"))            # [NEW]
+
+        steps = build_steps(workflow_mapped, corr_has_table) if workflow_mapped else []  # [CHANGED]
 
         # 파일/미리보기/기술통계
         generated_files = list_generated_files()
@@ -539,7 +571,8 @@ async def run_workflow(request: Request, filename: str = Form(None)):
         # 폴백: 파싱 실패했지만 이미지가 있다면 최소 Visualization 카드라도 표시
         if not workflow_mapped and preview_images:
             workflow_mapped = {"chartUrls": [img["url"] for img in preview_images]}
-            steps = build_steps(workflow_mapped)
+            steps = build_steps(workflow_mapped, corr_has_table)  # [CHANGED]
+
 
         print("[WF] keys:", list((workflow_mapped or {}).keys()))
 
@@ -548,7 +581,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
             "request": request, "current_filename": filename,
             "generated_files": generated_files, "preview_images": preview_images,
             "workflow": workflow_mapped, "steps": steps,
-            "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr,
+            "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr, "corr": corr,
         })
 
     except subprocess.TimeoutExpired:
@@ -560,6 +593,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
             "generated_files": gf, "preview_images": pv,
             "workflow": None, "steps": [], "head_columns": hc, "head_rows": hr,
             "describe_columns": dc, "describe_rows": dr,
+            "corr": {"headers": [], "rows": []},
         })
 # ------------------------------
 # 채팅
@@ -612,6 +646,7 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
             "describe_rows": describe_rows,
             "generated_files": generated_files,
             "preview_images": preview_images,
+            "corr": {"headers": [], "rows": []},
         })
 
     except subprocess.TimeoutExpired:
