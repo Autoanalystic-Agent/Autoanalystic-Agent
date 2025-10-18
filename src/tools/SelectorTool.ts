@@ -14,6 +14,51 @@ export class SelectorTool {
    * CSV 통계 데이터를 기반으로 분석에 적합한 컬럼들을 추천한다.
    * (Correlation 결과가 들어오면 추후 이 로직에서 우선순위/다중공선성 제거에 활용 가능)
    */
+  readonly prompt = `
+[SYSTEM]
+너는 EDA 결과와 상관분석 결과를 바탕으로 학습 컬럼/페어/전처리/문제유형/모델을 추천하는 선택기다.
+출력은 반드시 JSON 한 줄.
+
+[DEVELOPER]
+입력:
+- columnStats: ColumnStat[]
+- correlationResults?: { method, correlationMatrix, highCorrPairs }
+- hint?: { targetColumn?: string|null, problemType?: "regression"|"classification"|null }
+
+규칙:
+1) 선택 컬럼(selectedColumns): id/code/키워드 포함 컬럼 제외, 너무 희귀(unique==rows)한 컬럼 제외.
+2) 시각화 추천 페어(recommendedPairs):
+   - 우선순위: (상관 강함) numeric×numeric, (타겟 연관) feature×target
+   - reason 필드는 선택(간단한 사유).
+3) 전처리 추천(preprocessingRecommendations):
+   - 결측: numeric→mean, 그 외→mode, 결측 100%면 drop
+   - 정규화: numeric std>1 → "zscore", else "minmax"
+   - 인코딩: categorical unique<=10 → "onehot", else "label"
+4) 타깃/문제유형 추정:
+   - hint가 있으면 우선, 없으면 마지막 컬럼이나 분류/회귀 규칙으로 추정
+   - dtype==numeric → regression, else → classification
+5) 모델 추천(mlModelRecommendation):
+   - 1개 대표 + 대안 2~3개
+   - params는 합리적 기본값과 간단한 reason
+
+출력 스키마(SelectorOutput):
+{
+  "selectedColumns": string[],
+  "recommendedPairs": [{ "column1": string, "column2": string, "reason"?: string }],
+  "preprocessingRecommendations": [{ "column": string, "fillna"?: "drop"|"mean"|"mode", "normalize"?: "minmax"|"zscore", "encoding"?: "label"|"onehot" }],
+  "targetColumn": string|null,
+  "problemType": "regression"|"classification"|null,
+  "mlModelRecommendation": { "model": string,"score": number,"reason": string,"params": object,"alternatives": [{...}] } | null
+}
+
+주의:
+- dtype 표기는 numeric/categorical/datetime/text만 사용.
+- 설명 텍스트는 reason 필드 외에 출력하지 말 것.
+
+[USER]
+columnStats 개수: {{columnStats.length}}
+hint.targetColumn={{hint.targetColumn}}, hint.problemType={{hint.problemType}}
+  `.trim();
 
   public async run(input: SelectorInput): Promise<SelectorOutput> {
     // ⬇️ 기존 `{ columnStats }` 대신 input에서 구조분해만 추가 (correlation/hint는 당장 미사용)

@@ -125,6 +125,7 @@ export interface MachineLearningOutput {
 export interface WorkflowResult {
   filePath: string;
   columnStats: ColumnStat[];
+  correlationResults?: CorrelationOutput;
   selectedColumns: string[];
   recommendedPairs: { column1: string; column2: string }[];
   preprocessingRecommendations: PreprocessStep[];

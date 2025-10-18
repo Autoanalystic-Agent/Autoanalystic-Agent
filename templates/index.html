@@ -99,7 +99,11 @@
     /* [ADD] 왼쪽 패널 하단 고정 버튼 & 비활성화 스타일 */
     .sticky-bottom{ position: sticky; bottom: 16px; margin-top: 24px; }
     button[disabled]{ filter: grayscale(1) opacity(0.5); cursor: not-allowed; }
-
+    /* ===== [NEW] 상관행렬 표 스타일 ===== */
+    #corr-table { width:100%; border-collapse:collapse; margin-top:8px; background:#121621; border:1px solid var(--line); } /* [NEW] */
+    #corr-table th, #corr-table td { padding:8px; border-bottom:1px solid var(--line); text-align:right; }               /* [NEW] */
+    #corr-table thead th { background:#0f1320; text-align:left; }                                                       /* [NEW] */
+    #corr-table th:first-child, #corr-table td:first-child { text-align:left; }       
     /* ===== [ADD] 끝 ===== */
   </style>
 </head>
@@ -221,6 +225,41 @@
                     </tbody>
                   </table>
                 </div>
+
+              <!-- ===== [NEW] Correlation 블록 (Basic ↔ Selector 사이) ===== -->
+              {% elif s.key == 'corr' %}
+                <div class="mini">상관행렬 (Pearson)</div>
+                {% if corr and corr.headers and corr.headers|length > 0 %}
+                  <div style="overflow:auto; max-height:420px;">
+                    <table id="corr-table">
+                      <thead>
+                        <tr>
+                          <th style="position:sticky;left:0;z-index:2;background:#0f1320;"></th>
+                          {% for h in corr.headers %}
+                            <th>{{ h }}</th>
+                          {% endfor %}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for r in corr.rows %}
+                          <tr>
+                            <th style="position:sticky;left:0;z-index:1;background:#0f1320;">{{ r.row }}</th>
+                            {% for v in r.vals %}
+                              {% set val = (v|float(default=0.0)) %}
+                              <td class="corr-cell" data-val="{{ '%.3f' % val }}">
+                                {{ '%.3f' % val }}
+                              </td>
+                            {% endfor %}
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <small class="muted">* 셀 배경색은 |값|이 클수록 진합니다. (+파랑, −주황)</small>
+                {% else %}
+                  <div class="muted">숫자형 컬럼이 없어 상관행렬을 표시할 수 없습니다.</div>
+                {% endif %}
+              <!-- ===== [NEW] 끝 ===== -->
 
               {% elif s.key == 'selector' %}
                 <div class="mini">선택 컬럼:</div>
@@ -348,6 +387,24 @@
   {% endif %}
 </aside>
 </main>
+
+<!-- ===== [NEW] 상관행렬 셀 색상 스크립트 ===== -->
+<script>
+  (function colorizeCorr(){
+    const table = document.getElementById('corr-table');
+    if (!table) return;
+    const cells = table.querySelectorAll('.corr-cell');
+    cells.forEach(td => {
+      const raw = td.dataset.val;
+      const v = parseFloat(raw);
+      if (!isFinite(v)) return;
+      const a = Math.min(0.85, Math.abs(v));     // 농도
+      const hue = v >= 0 ? 210 : 20;             // +파랑, -주황
+      td.style.backgroundColor = `hsla(${hue}, 80%, 55%, ${a})`;
+    });
+  })();
+</script>
+<!-- ===== [NEW] 끝 ===== -->
 </body>
 <script>
   document.addEventListener("DOMContentLoaded", function() {
@@ -364,5 +421,4 @@
     }
   });
 </script>
-
 </html>
