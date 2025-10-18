@@ -38,11 +38,39 @@ export class MachineLearningTool {
 입력 파일: {{filePath}}, target={{targetColumn}}, type={{problemType}}
   `.trim();
 
-  async run(input: MachineLearningInput): Promise<string | MachineLearningOutput> {
+  // [ADD] /outputs/... → 실제 파일경로로 매핑
+  private toFsPath(p: string) {
+    if (!p) return p;
+    const norm = p.replace(/\\/g, "/");
+    if (norm.startsWith("/outputs/")) {
+      // "/outputs/..."  → "<cwd>/outputs/..."
+      return path.join(process.cwd(), norm.slice(1));
+    }
+    if (norm.startsWith("outputs/")) {
+      // "outputs/..."   → "<cwd>/outputs/..."
+      return path.join(process.cwd(), norm);
+    }
+    // 이미 절대경로면 그대로, 아니면 절대경로화
+    return path.isAbsolute(p) ? p : path.resolve(p);
+  }
+
+
+  // [ADD] 파일경로를 웹경로로 변환 (UI 노출용)
+  private toWebUrl(absOrRelPath: string) {
+    const abs = path.resolve(absOrRelPath).replace(/\\/g, "/");
+    const idx = abs.lastIndexOf("/outputs/");
+    const relFromOutputs = idx >= 0 ? abs.slice(idx + 1) : `outputs/${path.basename(abs)}`;
+    return `/${relFromOutputs}`.replace(/\\/g, "/");
+  }
+
+
+  async run(input: MachineLearningInput): Promise<MachineLearningOutput> {
     const { filePath, selectorResult } = input;
 
     const timestamp = Date.now();
-    const outputDir = path.join("src/outputs");
+    // ✅ 파이썬에 넘길 입력 CSV 경로는 "무조건" 파일시스템 경로로 정규화
+    const fsFilePath = this.toFsPath(filePath);                 // [ADD]
+    const outputDir  = this.toFsPath(input.outputDir ?? "outputs"); // [CHG]
     fs.mkdirSync(outputDir, { recursive: true });
 
     // 2. Python 실행 커맨드 구성
@@ -54,31 +82,48 @@ export class MachineLearningTool {
       exec(command, (error, stdout, stderr) => {
         if (error) {
           console.error("[MachineLearningTool 에러]", stderr);
-          reject(stderr);
-        }
-
-        // 모델 결과 파일(.pkl) 탐색 — 타임스탬프를 파일명에 포함하는 기존 규칙 가정
-        const modelFile = fs
-          .readdirSync(outputDir)
-          .filter((f) => f.endsWith(".pkl") && f.includes(String(timestamp)))[0];
-
-        if (!modelFile) {
-          reject("ML 결과 파일(.pkl)을 찾을 수 없습니다.");
+          reject(new Error(stderr?.toString() || "ML 실행 실패"));
           return;
         }
 
-        // 보고서 경로(텍스트/HTML 등) — 파이썬 스크립트가 생성한다고 가정
-        // 필요 시 train_ml_model.py에서 실제 파일명 규칙만 맞추면 됨
-        const reportTxtPath = path.join("src/outputs", `${timestamp}_report.txt`);
-        const reportHtmlPath = path.join("src/outputs", `${timestamp}_report.html`);
-        const reportPath = fs.existsSync(reportHtmlPath) ? reportHtmlPath : reportTxtPath;
+        // [ADD] 이번 실행에서 생성된 기대 파일명 우선 탐색
+        const expectedReport = path.join(outputDir, `ml_result_${timestamp}.txt`);
+        const expectedModel  = path.join(outputDir, `model_${timestamp}.pkl`);
+
+        // 보고서
+        let reportAbs = fs.existsSync(expectedReport)
+          ? expectedReport
+          : (() => {
+              // 보조: 가장 최근 txt/md/html
+              const cands = fs.readdirSync(outputDir)
+                .filter(f => /\.(txt|md|html)$/i.test(f))
+                .map(f => path.join(outputDir, f))
+                .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+              // 그래도 없으면 stdout 저장
+              if (cands.length === 0) {
+                fs.writeFileSync(expectedReport, (stdout || "").toString(), "utf-8");
+                return expectedReport;
+              }
+              return cands[0];
+            })();
+
+        // 모델(pkl)은 없어도 에러로 막지 않음
+        let modelAbs = fs.existsSync(expectedModel) ? expectedModel : null;
+        if (!modelAbs) {
+          const pkl = fs.readdirSync(outputDir)
+            .filter(f => /\.pkl$/i.test(f))
+            .map(f => path.join(outputDir, f))
+            .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+          modelAbs = pkl || null;
+        }
+
 
         // ✅ 반환 표면: MachineLearningOutput
         // - FastAPI map_artifacts()는 reportPath를 우선 매핑하여 /outputs 링크를 붙임
         // - modelPath/rawLog는 추가 정보 (UI에서 안 쓰면 무시됨)
         const out: MachineLearningOutput = {
-          reportPath,
-          modelPath: path.join("src/outputs", modelFile),
+          reportPath: this.toWebUrl(reportAbs),
+          modelPath: modelAbs ? this.toWebUrl(modelAbs) : undefined, // [ADD]
           rawLog: (stdout || "").toString().trim(),
         };
 

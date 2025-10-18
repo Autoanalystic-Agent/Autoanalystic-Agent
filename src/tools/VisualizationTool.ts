@@ -45,7 +45,7 @@ export class VisualizationTool {
 
     // 1. 출력 폴더 생성
     const timestamp = Date.now();
-    const outputDir = path.join("src/outputs");
+    const outputDir = input.outputDir ?? path.join("outputs"); // [CHG] 루트 outputs 기본값
     fs.mkdirSync(outputDir, { recursive: true });
 
     // 2. Python 실행 커맨드 구성
@@ -53,6 +53,19 @@ export class VisualizationTool {
     const selectorJsonEscaped = JSON.stringify(selectorResult).replace(/"/g, '\\"');
 
     const command = `python ${pythonScriptPath} "${filePath}" "${selectorJsonEscaped}" "${outputDir}" ${timestamp}`;
+
+    // [ADD] 웹 경로로 변환하는 헬퍼: outputDir 내 파일을 /outputs/... 형태 URL로 변환
+    const toWebUrl = (absOrRelPath: string) => {                      // [ADD]
+      // 1) 절대경로화
+      const abs = path.resolve(absOrRelPath);
+      // 2) outputs 루트부터의 상대경로를 추출
+      //    예: /project/outputs/anon/.../viz → outputs/anon/.../viz
+      const norm = abs.replace(/\\/g, "/");
+      const idx = norm.lastIndexOf("/outputs/");
+      // 서버가 outputs/를 정적 서빙한다고 가정 (/outputs/*)
+      const relFromOutputs = idx >= 0 ? norm.slice(idx + 1) : `outputs/${path.basename(abs)}`;
+      return `/${relFromOutputs}`.replace(/\\/g, "/");
+    };    
 
     return new Promise((resolve, reject) => {
       exec(command, (error, stdout, stderr) => {
@@ -71,25 +84,32 @@ export class VisualizationTool {
         
         // ① 확장자 기준으로 이미지 수집
         // ② 이번 실행에 생성된 파일만 포함(수정시각으로 필터) — 타임스탬프 의존 제거
-        const files = fs.readdirSync(outputDir)
-          .filter((f) => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
-          .filter((f) => {
-            try {
-              const stat = fs.statSync(path.join(outputDir, f));
-              return stat.mtimeMs >= timestamp - 2000; // 여유 2초
-            } catch { return false; }
-          });
+        let files: string[];
+        if (input.outputDir) {
+          // [ADD] 세션 전용 폴더이면 해당 폴더의 이미지 모두 수집
+          files = fs.readdirSync(outputDir)
+            .filter((f) => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
+            .map((f) => path.join(outputDir, f));
+        } else {
+          // 공유 폴더 fallback일 때만 mtime 필터로 이번 실행분 추림
+          files = fs.readdirSync(outputDir)
+            .filter((f) => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
+            .filter((f) => {
+              try {
+                const stat = fs.statSync(path.join(outputDir, f));
+                return stat.mtimeMs >= timestamp - 2000;
+              } catch { return false; }
+            })
+            .map((f) => path.join(outputDir, f));
+        }
 
-        // 웹에서 접근 가능한 URL로 변환 (항상 슬래시 사용, 선행 슬래시 포함)
-        const urls = files
-          .map((f) => `/outputs/${f}`)
-          .map((u) => u.replace(/\\/g, "/"));          // 윈도우 역슬래시 → 슬래시
+        // 웹에서 접근 가능한 URL로 변환
+        const urls = files.map(toWebUrl); // [CHG]
 
         // ✅ CorrelationTool이 생성한 히트맵이 있으면 함께 반환 목록에 포함
         //    (예: correlation.heatmapPath === "src/outputs/corr_heatmap_123.png")
         if (correlation?.heatmapPath && fs.existsSync(correlation.heatmapPath)) {
-          const basename = path.basename(correlation.heatmapPath);
-          const webUrl = `/outputs/${basename}`.replace(/\\/g, "/");
+          const webUrl = toWebUrl(correlation.heatmapPath); // [CHG]
           if (!urls.includes(webUrl)) urls.push(webUrl);
         }
 

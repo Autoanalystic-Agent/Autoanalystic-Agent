@@ -75,6 +75,14 @@ export class PreprocessingTool {
 입력 파일: {{filePath}}, 단계 수: {{recommendations.length}}
   `.trim();
 
+  // [ADD] 웹 경로로 변환: 절대/상대 경로 -> /outputs/... 형식
+  private toWebUrl(absOrRelPath: string) {
+    const abs = path.resolve(absOrRelPath).replace(/\\/g, "/");
+    const idx = abs.lastIndexOf("/outputs/");
+    const relFromOutputs = idx >= 0 ? abs.slice(idx + 1) : `outputs/${path.basename(abs)}`;
+    return `/${relFromOutputs}`.replace(/\\/g, "/");
+  }
+
   
   private data: Data = [];
 
@@ -179,11 +187,9 @@ export class PreprocessingTool {
     return `컬럼 ${column} 인코딩 완료 (${method})`;
   }
 
-  public async runPreprocessing(request: PreprocessingInput): Promise<PreprocessingOutput> { // [FIX]
-    // CSV 로딩
-    const defaultDir = path.join(process.cwd(), "src/uploads");
-    const cleanedFilePath = request.filePath.replace(/^.*uploads[\\/]/, "");
-    const resolvedPath = path.join(defaultDir, cleanedFilePath);
+  public async runPreprocessing(request: PreprocessingInput): Promise<PreprocessingOutput> { // [CHG]
+    // [CHG] 파일 경로 해석: 더 이상 src/uploads 강제 X, 전달받은 경로 그대로 사용
+    const resolvedPath = path.resolve(request.filePath); // [CHG]
 
     try {
       const file = await fs.readFile(resolvedPath, "utf-8");
@@ -213,15 +219,21 @@ export class PreprocessingTool {
       }
     }
     
-    const outputFileName = `preprocessed_${cleanedFilePath}`;
-    const outputDir = path.join(process.cwd(), "src/outputs"); // [FIX]
-    await fs.mkdir(outputDir, { recursive: true });            // [FIX]
-    const outputPath = path.join(outputDir, outputFileName);   // [FIX]
-    
+    // [CHG] 세션/런별 산출물 폴더 사용: 전달받은 outputDir 우선, 없으면 /outputs
+    const outDir = request.outputDir ?? path.join("outputs");        // [CHG]
+    await fs.mkdir(outDir, { recursive: true });                      // [CHG]
+
+    const base = path.basename(resolvedPath);
+    const outputFileName = `preprocessed_${base}`;
+    const absOutputPath = path.join(outDir, outputFileName);          // [CHG]
+
     const csv = stringify(this.data, { header: true });
-    await fs.writeFile(outputPath, csv, "utf-8");
+    await fs.writeFile(absOutputPath, csv, "utf-8");
 
-    return { messages: results, preprocessedFilePath: outputPath };
+    // [ADD] 프런트에서 바로 쓸 수 있게 /outputs/... URL로 반환
+    const webUrl = this.toWebUrl(absOutputPath);                      // [ADD]
+
+
+    return { messages: results, preprocessedFilePath: webUrl, outputDir: outDir }; // [CHG]
   }
-
 }

@@ -14,6 +14,14 @@ selector_result = json.loads(sys.argv[2])  # SelectorTool 결과 (JSON)
 output_dir = sys.argv[3]               # 출력 디렉토리
 timestamp = sys.argv[4]                # 타임스탬프
 
+# [ADD] 출력 폴더 보장
+os.makedirs(output_dir, exist_ok=True)       # [ADD]
+
+# [ADD] 웹 경로가 들어와도 로컬 파일경로로 매핑
+if file_path.startswith("/outputs/"):
+    file_path = os.path.join(os.getcwd(), file_path.lstrip("/"))
+
+
 df = pd.read_csv(file_path)
 
 target = selector_result.get("targetColumn")

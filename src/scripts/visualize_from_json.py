@@ -10,6 +10,9 @@ file_path = sys.argv[1]
 selector_result_json = sys.argv[2]
 output_dir = sys.argv[3]
 
+os.makedirs(output_dir, exist_ok=True)   # [ADD]
+
+
 # JSON 문자열 파싱
 selector_result = json.loads(selector_result_json)
 

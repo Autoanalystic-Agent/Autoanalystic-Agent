@@ -114,8 +114,8 @@ export class WorkflowTool {
 
 
   // [NEW] 상관행렬/페어 파일 아티팩트 생성(표 렌더용)
-  private saveCorrelationArtifacts(filePath: string, corr: CorrelationOutput) {
-    const outDir = path.join(path.dirname(filePath), "artifacts");
+  private saveCorrelationArtifacts(root: string, filePath: string, corr: CorrelationOutput) {
+    const outDir = path.join(root, "corr");
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
     const base = path.basename(filePath).replace(/\.[^.]+$/, "");
@@ -141,7 +141,9 @@ export class WorkflowTool {
   }
 
   // ✅ 반환 타입을 공통 타입으로 고정
-  public async run({ filePath }: { filePath: string }): Promise<WorkflowResult & {
+  public async run(
+    { filePath, outputRoot }: { filePath: string; outputRoot?: string }   // [CHG]
+  ): Promise<WorkflowResult & {
     steps: {
       basic: { input: BasicAnalysisInput; output: BasicAnalysisOutput };
       correlation?: { input: CorrelationInput; output: CorrelationOutput; artifacts: { matrixCsv: string; pairsJson: string } };
@@ -154,9 +156,14 @@ export class WorkflowTool {
     if (!filePath) throw new Error("파일 경로(filePath)는 필수입니다.");
     this.log("START", `filePath=${filePath}`);
 
+    // [ADD] 세션/런 루트(없으면 안전한 기본값)
+    const root = outputRoot ?? path.join("outputs", "default_session", `run_${Date.now()}`); // [ADD]
+    fs.mkdirSync(root, { recursive: true });                                                 // [ADD]
+
+
     // 1) BasicAnalysis
     const analyzer = new BasicAnalysisTool();
-    const basicInput: BasicAnalysisInput = { filePath };                  // [ADD]
+    const basicInput: BasicAnalysisInput = { filePath, outputDir: path.join(root, "basic") } as any; // [ADD]
     const basicOutput: BasicAnalysisOutput = await analyzer.run(basicInput); // [ADD]
     const columnStats: ColumnStat[] = (basicOutput?.columnStats ?? []) as ColumnStat[];
 
@@ -172,8 +179,8 @@ export class WorkflowTool {
         const corrInput: CorrelationInput = { data: corrData, method: "pearson", dropna: true, threshold: 0.7 }; // [ADD]
         const corrOutput: CorrelationOutput = await corrTool.run(corrInput);                                       // [ADD]
         correlationResults = corrOutput;
-        corrArtifacts = this.saveCorrelationArtifacts(filePath, corrOutput); // << UI용 파일 생성
-
+        // 세션/런 루트에 아티팩트 저장
+        corrArtifacts = this.saveCorrelationArtifacts(root, filePath, corrOutput);            // [CHG]
         correlationStep = { input: corrInput, output: corrOutput, artifacts: corrArtifacts }; // [ADD]
         this.log("CORR", `method=${correlationResults.method}, highPairs=${correlationResults.highCorrPairs.length}`);
       } else {
@@ -185,7 +192,7 @@ export class WorkflowTool {
 
     // 3) Selector (Correlation은 이후 단계에서 연결)
     const selector = new SelectorTool();
-    const selectorInput: SelectorInput = { columnStats, correlationResults }; // [ADD]
+    const selectorInput: SelectorInput = { columnStats, correlationResults, outputDir: path.join(root, "select") } as any; // [ADD]
     const selectorOutput: SelectorOutput = await selector.run(selectorInput); // [ADD]
 
     const {
@@ -203,7 +210,8 @@ export class WorkflowTool {
       filePath,
       selectorResult: { selectedColumns, recommendedPairs },
       correlation: { matrixPath: corrArtifacts?.matrixCsv },
-    };
+      outputDir: path.join(root, "viz"),                      // [ADD]
+    } as any;
     const vizRaw = await visualizer.run(visualizationInput);
     // vizRaw가 배열이면 그대로, 객체면 .chartPaths 사용
     const chartPaths: string[] = Array.isArray(vizRaw)
@@ -220,7 +228,8 @@ export class WorkflowTool {
     const preprocessingInput : PreprocessingInput = {
       filePath,
       recommendations: preprocessingRecommendations,
-    };
+      outputDir: path.join(root, "prep"),                     // [ADD]
+    } as any;
     const preprocessingOutput: PreprocessingOutput = await preprocessor.runPreprocessing(preprocessingInput); // [ADD]
     const effectiveFilePath = preprocessingOutput?.preprocessedFilePath || filePath;
 
@@ -233,7 +242,8 @@ export class WorkflowTool {
         problemType: (problemType ?? undefined) as Exclude<ProblemType, null> | undefined, // [FIX] 안전 캐스팅
         mlModelRecommendation: mlModelRecommendation ?? undefined,
       },
-    };
+      outputDir: path.join(root, "ml"),                       // [ADD]
+    } as any;
 
     // 🔧 문자열/객체 모두 { reportPath: string }으로 정규화 (map_artifacts와 호환)
     const mlRaw = await mlTool.run(mlInput);
@@ -267,7 +277,8 @@ export class WorkflowTool {
         preprocessing: { input: preprocessingInput, output: preprocessingOutput },
         machineLearning: { input: mlInput, output: mlRaw },
       },
-    };
+      outputsRoot: root, // [ADD]
+    } as any;
   }
 }
 //     //  1. 통계 분석 도구 실행

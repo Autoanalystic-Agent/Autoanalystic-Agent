@@ -15,9 +15,11 @@ export interface ColumnStat {
 // ── BasicAnalysisTool ───────────────────────────────────────
 export interface BasicAnalysisInput {
   filePath: string;
+  outputDir?: string;                  // [ADD] 산출물 저장 폴더(옵션)
 }
 export interface BasicAnalysisOutput {
   columnStats: ColumnStat[];
+  summaryPath?: string;                // [ADD] 선택적으로 JSON/텍스트 저장 시
 }
 
 
@@ -40,6 +42,8 @@ export interface CorrelationOutput {
   method: CorrMethod;
   correlationMatrix: Record<string, Record<string, number>>;
   highCorrPairs: CorrelationPair[];
+  matrixCsvPath?: string;              // [ADD] (있으면) 저장된 상관행렬 CSV 경로
+  highPairsJsonPath?: string;          // [ADD] (있으면) 저장된 페어 JSON 경로
 }
 
 
@@ -54,6 +58,7 @@ export interface SelectorInput {
   };
   // (선택) Hint
   hint?: { targetColumn?: string | null; problemType?: ProblemType };
+  outputDir?: string;
 }
 
 export interface PreprocessStep {
@@ -81,6 +86,7 @@ export interface SelectorOutput {
       params: Record<string, any>;
     }[];
   } | null;
+  summaryPath?: string;  
 }
 
 // ── VisualizationTool ──────────────────────────────────────
@@ -88,6 +94,7 @@ export interface VisualizationInput {
   filePath: string;
   selectorResult: Pick<SelectorOutput, 'selectedColumns' | 'recommendedPairs'>;
   correlation?: { matrixPath?: string; heatmapPath?: string }; // 선택
+  outputDir?: string;
 }
 export interface VisualizationOutput {
   chartPaths: string[];
@@ -97,10 +104,12 @@ export interface VisualizationOutput {
 export interface PreprocessingInput {
   filePath: string;
   recommendations: PreprocessStep[];
+  outputDir?: string;
 }
 export interface PreprocessingOutput {
   preprocessedFilePath?: string;
   messages?: string[];
+  outputDir?: string;
 }
 
 // ── MachineLearningTool ────────────────────────────────────
@@ -111,10 +120,11 @@ export interface MachineLearningInput {
     problemType?: Exclude<ProblemType, null>;
     mlModelRecommendation?: SelectorOutput['mlModelRecommendation'];
   };
+  outputDir?: string;
 }
 export interface MachineLearningOutput {
   reportPath: string;        // 핵심 교차 필드
-  // 나머지는 자유 (원하면 확장)
+  modelPath?: string;        // [ADD] 모델 저장 경로(옵션)
   [k: string]: any;
 }
 
@@ -132,4 +142,5 @@ export interface WorkflowResult {
   chartPaths: string[];
   preprocessedFilePath?: string;
   mlResultPath?: { reportPath: string }; // FastAPI가 기대하는 표면
+  outputsRoot?: string;                  // [ADD] 세션/런 기준 산출물 루트(우측 패널 목록화용)
 }

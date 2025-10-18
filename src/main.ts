@@ -18,6 +18,10 @@ import readline from "readline";
 import dotenv from "dotenv";
 import fs from "fs";
 
+// [ADD] 최소 변경: 식별자 생성을 위해 path/crypto만 추가
+import path from "path";            // [ADD]
+import crypto from "crypto";        // [ADD]
+
 const originalConsoleLog = console.log;
 console.log = (...args: any[]) => {
   if (args[0]?.includes("injecting env")) return;
@@ -66,6 +70,35 @@ function saveHistories(k: string, prompts: any[]) {
   SESSIONS.set(k, [...prev, ...delta]);
 }
 
+
+
+// ─────────────────────────────────────────────────────────────
+// [ADD] 아주 작은 유틸만 추가: 세션/런 식별자 파생(리팩 최소화)
+function sha1(x: string) {
+  return crypto.createHash("sha1").update(x).digest("hex").slice(0, 16);
+}
+function safeStat(p?: string) {
+  try {
+    if (!p) return { size: 0, mtimeMs: 0 };
+    const s = fs.statSync(p);
+    return { size: s.size, mtimeMs: s.mtimeMs };
+  } catch { return { size: 0, mtimeMs: 0 }; }
+}
+/** 
+ * 기존: sessionKey = argSession || (csv ? `local:${csv}` : "local:default")
+ * 변경: sessionKey = argSession || `sess_${datasetId}`  (chat/workflow 동일 세션 유지)
+ *      runId는 workflow 모드에서만 필요.
+ */
+function deriveIds(csvFilePath?: string, argSession?: string) {   // [ADD]
+  const { size, mtimeMs } = safeStat(csvFilePath);
+  const datasetId = csvFilePath
+    ? `ds_${sha1([path.basename(csvFilePath), size, mtimeMs].join("|"))}`
+    : "ds_default";
+  const sessionKey = argSession || `sess_${datasetId}`;
+  const runId = `run_${Date.now()}`;
+  return { datasetId, sessionKey, runId };
+}
+
 // ─────────────────────────────────────────────────────────────
 // 채팅 모드 시스템 프롬프트
 const CHAT_SYSTEM = `
@@ -107,7 +140,9 @@ async function main() {
   const csvFilePath = rest[1];
   const argSession = rest[2];
 
-  const sessionKey = argSession || (csvFilePath ? `local:${csvFilePath}` : "local:default");
+  // const sessionKey = argSession || (csvFilePath ? `local:${csvFilePath}` : "local:default");
+  // [CHG] 세션키 파생 로직을 공통화(모드/파일 변동과 무관하게 대화 스코프 유지)
+  const { sessionKey } = deriveIds(csvFilePath, argSession);    // [CHG]
   const histories = loadHistories(sessionKey);
 
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -152,7 +187,6 @@ async function main() {
         application: typia.llm.application<CorrelationTool, "chatgpt">(),
         execute: new CorrelationTool(),
       },                
-      // CorrelationTool 사용 시 controllers에 추가
     ],
     histories,
   });
@@ -188,13 +222,47 @@ async function main() {
     // (선택) 파일 확인
     try { fs.readFileSync(csvFilePath, "utf-8"); } catch { /* ignore */ }
 
+
+    // [ADD] 워크플로 시작 이벤트를 동일 세션 히스토리에 남김(채팅 패널 유지)
+    const { datasetId, sessionKey: sessK, runId } = deriveIds(csvFilePath, argSession); // [ADD]
+    const startEvent = {
+      type: "describe",
+      role: "user",
+      text: `워크플로 실행 요청: file=${csvFilePath}, run=${runId}`,
+      ts: Date.now()
+    }; // [ADD]
+    saveHistories(sessK, [startEvent]); // [ADD]
+
+
+
     const workflow = new WorkflowTool();
-    const result = await workflow.run({ filePath: csvFilePath });
+
+    // [ADD] 세션/런 기준 출력 루트 생성 후 전달
+    const userIdFolder = "anon"; // 로그인 없음 가정, 추후 쿠키/토큰으로 교체 가능
+    const outputRoot = path.join("outputs", userIdFolder, datasetId, sessK, "runs", runId); // [ADD]
+
+    const result = await workflow.run({ filePath: csvFilePath, outputRoot } as any); // [CHG]
+
+    // [ADD] 결과 한국어 요약을 동일 세션에 기록(채팅 패널에서 즉시 보임)
+    let summary = `워크플로 완료 (run=${runId}). 산출물 키: ${Object.keys(result ?? {}).join(", ")}`;
+    if (!isMostlyKorean(summary)) summary = await forceKoreanOnly(openai, summary);
+    const assistantMsg = { type: "text", role: "assistant", text: summary, ts: Date.now() };
+    saveHistories(sessK, [assistantMsg]); // [ADD]
+
+
 
     // FastAPI가 파싱할 유일한 stdout
     console.log("<<<WORKFLOW_JSON_START>>>");
-    console.log(JSON.stringify({ workflow: result }));
-    console.log("<<<WORKFLOW_JSON_END>>>");
+    console.log(JSON.stringify({
+      sessionKey: sessK,                    // [ADD]
+      runId,                                // [ADD]
+      datasetId,                            // [ADD]
+      workflow: result,
+      chatDelta: [                          // [ADD]
+        { role: "user", text: startEvent.text, ts: startEvent.ts },
+        assistantMsg
+      ]
+    }));    console.log("<<<WORKFLOW_JSON_END>>>");
     return;
   }
 
