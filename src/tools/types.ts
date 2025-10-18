@@ -86,6 +86,7 @@ export interface SelectorOutput {
 // ── VisualizationTool ──────────────────────────────────────
 export interface VisualizationInput {
   filePath: string;
+  sessionId?: string;
   selectorResult: Pick<SelectorOutput, 'selectedColumns' | 'recommendedPairs'>;
   correlation?: { matrixPath?: string; heatmapPath?: string }; // 선택
 }
@@ -97,6 +98,7 @@ export interface VisualizationOutput {
 export interface PreprocessingInput {
   filePath: string;
   recommendations: PreprocessStep[];
+  sessionId?: string;
 }
 export interface PreprocessingOutput {
   preprocessedFilePath?: string;
@@ -106,6 +108,7 @@ export interface PreprocessingOutput {
 // ── MachineLearningTool ────────────────────────────────────
 export interface MachineLearningInput {
   filePath: string; // 전처리 산출물(없으면 원본)
+  sessionId?: string;
   selectorResult: {
     targetColumn?: string;
     problemType?: Exclude<ProblemType, null>;

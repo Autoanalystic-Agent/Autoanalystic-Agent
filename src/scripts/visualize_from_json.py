@@ -84,6 +84,7 @@ for pair in top_pairs:
 
         plt.tight_layout()
         file_name = f"{col1}_vs_{col2}.png".replace(" ", "_")
+        print(output_dir)
         file_path_out = os.path.join(output_dir, file_name)
         plt.savefig(file_path_out)
         plt.close()

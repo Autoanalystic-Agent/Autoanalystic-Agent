@@ -70,7 +70,8 @@ async function main() {
   const userMessage = rest[0] || "";
   const csvFilePath = rest[1];
   const argSession = rest[2];
-
+  const sessionId = rest[2];     // FastAPI에서 전달된 sessionId
+  console.log(sessionId)
   const sessionKey = argSession || (csvFilePath ? `local:${csvFilePath}` : "local:default");
   const histories = loadHistories(sessionKey);
 
@@ -147,7 +148,7 @@ async function main() {
     try { fs.readFileSync(csvFilePath, "utf-8"); } catch { /* ignore */ }
 
     const workflow = new WorkflowTool();
-    const result = await workflow.run({ filePath: csvFilePath });
+    const result = await workflow.run({ filePath: csvFilePath , sessionId});
 
     // FastAPI가 파싱할 유일한 stdout
     console.log("<<<WORKFLOW_JSON_START>>>");

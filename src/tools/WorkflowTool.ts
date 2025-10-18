@@ -57,9 +57,9 @@ export class WorkflowTool {
   }
 
   // ✅ 반환 타입을 공통 타입으로 고정
-  public async run({ filePath }: { filePath: string }): Promise<WorkflowResult> {
+  public async run({ filePath, sessionId }: { filePath: string; sessionId?: string }): Promise<WorkflowResult> {
     if (!filePath) throw new Error("파일 경로(filePath)는 필수입니다.");
-    this.log("START", `filePath=${filePath}`);
+    this.log("START", `filePath=${filePath}, sessionId=${sessionId ?? "none"}`);
 
     // 1) BasicAnalysis
     const analyzer = new BasicAnalysisTool();
@@ -104,6 +104,7 @@ export class WorkflowTool {
     const visualizer = new VisualizationTool();
     const chartPaths = await visualizer.run({
       filePath,
+      sessionId,
       selectorResult: { selectedColumns, recommendedPairs },
     });
 
@@ -114,6 +115,7 @@ export class WorkflowTool {
     const pre = await preprocessor.runPreprocessing({
       filePath,
       recommendations: preprocessingRecommendations,
+      sessionId,
     });
     const effectiveFilePath = pre?.preprocessedFilePath || filePath;
 
@@ -121,6 +123,7 @@ export class WorkflowTool {
     const mlTool = new MachineLearningTool();
     const mlRes = await mlTool.run({
       filePath: effectiveFilePath,
+      sessionId,
       selectorResult: {
         targetColumn: targetColumn ?? undefined,
         problemType: (problemType ?? undefined) as any,
