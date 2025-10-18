@@ -69,6 +69,8 @@
       display:flex; flex-direction:column; gap:10px;
       border:1px solid var(--line); border-radius:12px; padding:16px;
       background:#121621; min-height:280px;
+      overflow: auto;
+      max-height: 70vh; /* 예시: 높이 제한 */
     }
     .bubble{ max-width:80%; padding:10px 12px; border-radius:12px; line-height:1.45; white-space:pre-wrap }
     .me{ align-self:flex-end; background:#24304a }
@@ -135,27 +137,7 @@
             {% endfor %}
           </tbody>
         </table>
-      {% endif %}
-      {% if describe_rows %}
-        <h3 style="margin-top:16px">통계 요약</h3>
-        <table>
-          <thead>
-            <tr>
-              {% for col in describe_columns %}<th>{{ col }}</th>{% endfor %}
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in describe_rows %}
-              <tr>
-                {% for col in describe_columns %}
-                  <td>{{ row[col] if col in row else "" }}</td>
-                {% endfor %}
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% endif %}
-      
+      {% endif %}      
 
       {% if df_info_text %}
         <h3 style="margin-top:16px">DataFrame info()</h3>
@@ -167,7 +149,7 @@
       <!-- [ADD] 자동 분석 파이프라인 실행 버튼 (왼쪽 하단 고정) -->
       <div class="sticky-bottom">
       <form action="/run_workflow/" method="post">
-        <input type="hidden" name="filename" value="{{ current_filename or '' }}">
+        <input type="hidden" name="sessionId" value="{{ current_session or '' }}">
         <button type="submit"
           {% if not current_filename %}disabled title="CSV를 업로드하세요"{% endif %}>
           ⚙️ 자동 분석 파이프라인 실행
@@ -185,7 +167,7 @@
 
   <!-- 중앙: 채팅 -->
   <section class="center">
-    <h1>Chat</h1>
+    <h1>💬 Chat</h1>
     <div class="chat-list">
       {% if chat_history %}
         {% for chat in chat_history %}
@@ -204,7 +186,7 @@
     <div style="height:10px"></div>
     <form class="row" action="/chat/" method="post">
       <input type="text" name="message" placeholder="메시지 입력" required />
-      <input type="hidden" name="filename" value="{{ current_filename or '' }}">
+      <input type="hidden" name="sessionId" value="{{ current_session or '' }}">
       <button type="submit">전송</button>
     </form>
     <!-- [ADD] 워크플로 단계별 결과 타임라인 -->
@@ -384,26 +366,26 @@
 
   <!-- 오른쪽: 생성된 파일 다운로드 -->
   <aside class="panel right">
-    <h2>생성된 파일</h2>
-    {% if generated_files and generated_files|length > 0 %}
-      {% for f in generated_files %}
-        <div class="file-card">
-          {% set is_img = f.name.endswith('.png') or f.name.endswith('.jpg') or f.name.endswith('.jpeg') or f.name.endswith('.webp') or f.name.endswith('.gif') %}
-          {% if is_img %}
-            <img class="file-thumb" src="{{ f.url }}" alt="{{ f.name }}">
-          {% else %}
-            <small>{{ f.name }}</small>
-          {% endif %}
-          <div class="file-actions">
-            <a class="btn" href="{{ f.url }}" download="{{ f.name }}">Download</a>
-          </div>
-          <small>{{ f.name }} • {{ (f.size/1024)|round(1) }} KB</small>
+  <h2>생성된 파일</h2>
+  {% if generated_files and generated_files|length > 0 %}
+    {% for f in generated_files %}
+      <div class="file-card">
+        {% set is_img = f.ext in ['.png','.jpg','.jpeg','.webp','.gif'] %}
+        {% if is_img %}
+          <img class="file-thumb" src="{{ f.url }}" alt="{{ f.name }}">
+        {% else %}
+          <small>{{ f.name }}</small>
+        {% endif %}
+        <div class="file-actions">
+          <a class="btn" href="{{ f.url }}" download="{{ f.name }}">Download</a>
         </div>
-      {% endfor %}
-    {% else %}
-      <p class="muted">아직 생성된 파일이 없습니다.</p>
-    {% endif %}
-  </aside>
+        <small>{{ f.name }} • {{ (f.size/1024)|round(1) }} KB</small>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="muted">아직 생성된 파일이 없습니다.</p>
+  {% endif %}
+</aside>
 </main>
 
 <!-- ===== [NEW] 상관행렬 셀 색상 스크립트 ===== -->

@@ -14,6 +14,7 @@ app = FastAPI()
 
 UPLOAD_DIR = Path("src/uploads")
 OUTPUT_DIR = Path("src/outputs")    # 생성물이 저장되는 폴더
+
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -26,10 +27,10 @@ import re
 PROJECT_ROOT = Path(__file__).resolve().parent
 NPX = "npx.cmd" if os.name == "nt" else "npx"
 
-def run_ts_workflow(file_path: Path, filename: str, message: str = "분석해줘"):
+def run_ts_workflow(file_path: Path, sessionId:str, message: str = "분석해줘"):
     import shlex, subprocess, os
     # ⬇️ 여기: main.ts + --mode=workflow
-    base_args = [NPX, "ts-node", "src/main.ts", "--mode=workflow", message, str(file_path), filename]
+    base_args = [NPX, "ts-node", "src/main.ts", "--mode=workflow", message, str(file_path), sessionId]
     env = os.environ.copy()
     try:
         proc = subprocess.Popen(
@@ -65,24 +66,24 @@ def run_ts_workflow(file_path: Path, filename: str, message: str = "분석해줘
 def _norm(p: str) -> str:
     return str(p).replace("\\", "/")
 
-def path_to_outputs_url(path: str | None) -> str | None:
+def path_to_outputs_url(path: str | None,sessionId : str) -> str | None:
     if not path:
         return None
     p = Path(path)
     try:
         rel = p.relative_to(OUTPUT_DIR)
-        return f"/outputs/{_norm(rel)}"
+        return f"/outputs/{sessionId}/{_norm(rel)}"
     except Exception:
-        return f"/outputs/{_norm(p.name)}"
+        return f"/outputs/{sessionId}/{_norm(p.name)}"
 
-def map_artifacts(workflow: dict) -> dict:
+def map_artifacts(workflow: dict, sessionId: str) -> dict:
     if not isinstance(workflow, dict):
         return workflow
     wf = dict(workflow)
 
     # 1) 전처리 산출물 URL
     if wf.get("preprocessedFilePath"):
-        wf["preprocessedFilePathUrl"] = path_to_outputs_url(wf["preprocessedFilePath"])
+        wf["preprocessedFilePathUrl"] = path_to_outputs_url(wf["preprocessedFilePath"], sessionId)
 
     # 2) ML 결과 표준화
     #    mlResultPath가 올 수 있는 모든 케이스(dict/str/None/기타)를 안전 처리
@@ -105,9 +106,9 @@ def map_artifacts(workflow: dict) -> dict:
 
     # reportPath / mlResultPath 등 경로 키에서 URL 파생 (둘 다 지원)
     if isinstance(mlp.get("mlResultPath"), str):
-        mlp["mlResultUrl"] = path_to_outputs_url(mlp["mlResultPath"])
+        mlp["mlResultUrl"] = path_to_outputs_url(mlp["mlResultPath"], sessionId)
     if isinstance(mlp.get("reportPath"), str):
-        mlp["reportUrl"] = path_to_outputs_url(mlp["reportPath"])
+        mlp["reportUrl"] = path_to_outputs_url(mlp["reportPath"], sessionId)
         # 보고서 본문이 '�' 등 깨져있다면 UTF-8 재로드 시도
         if mlp.get("report") and "�" in mlp["report"]:
             try:
@@ -118,7 +119,7 @@ def map_artifacts(workflow: dict) -> dict:
     wf["mlResultPath"] = mlp  # 표준화된 형태로 되돌려 넣기
 
     if isinstance(wf.get("chartPaths"), list):
-        wf["chartUrls"] = [path_to_outputs_url(p) for p in wf["chartPaths"]]
+        wf["chartUrls"] = [path_to_outputs_url(p, sessionId) for p in wf["chartPaths"]]
     return wf
 
 def build_steps(wf: dict, corr_has_table: bool = False) -> list[dict]:  # [CHANGED]
@@ -332,15 +333,19 @@ def extract_workflow_dict(output_str: str):
 # ------------------------------
 # 생성물 리스트
 # ------------------------------
-def list_generated_files() -> List[Dict]:
+def list_generated_files(sessionId:str) -> List[Dict]:
     """OUTPUT_DIR 내 생성물 파일 리스트를 dict 목록으로 반환"""
     files = []
+    if not sessionId:
+        # 적절한 기본값 또는 에러 처리
+        sessionId = "default"  # 임시 기본 디렉토리
+    session_dir = OUTPUT_DIR / sessionId
     if OUTPUT_DIR.exists():
-        for p in sorted(OUTPUT_DIR.glob("*")):
+        for p in sorted(session_dir.glob("*")):
             if p.is_file():
                 files.append({
                     "name": p.name,
-                    "url": f"/outputs/{p.name}",
+                    "url": f"/outputs/{sessionId}/{p.name}",
                     "size": p.stat().st_size,
                     "ext": p.suffix.lower(),
                 })
@@ -424,7 +429,7 @@ async def home(request: Request, sessionId: str = Query(None)):
     if file_path:
         head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(file_path)
 
-    generated_files = list_generated_files()
+    generated_files = list_generated_files(sessionId)
 
     # 이미지 미리보기용 생성물 (확장자 기준)
     preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
@@ -435,7 +440,8 @@ async def home(request: Request, sessionId: str = Query(None)):
         "head_rows": head_rows,
         "describe_columns": describe_columns,
         "describe_rows": describe_rows,
-        "current_filename": sessionId, # filename
+        "current_filename": Path(file_path).name if file_path else None,
+        "current_session": sessionId,
         "generated_files": generated_files,
         "preview_images": preview_images,
         "corr": {"headers": [], "rows": []},  # [NEW]
@@ -447,22 +453,29 @@ async def home(request: Request, sessionId: str = Query(None)):
 # ------------------------------
 @app.post("/upload_csv/")
 async def upload_csv(request: Request, file: UploadFile = File(...)):
-    file_path = UPLOAD_DIR / file.filename
+    sessionId = str(uuid.uuid4())
+    session_dir = UPLOAD_DIR / sessionId
+    session_dir.mkdir(exist_ok=True, parents=True)
+
+    file_path = session_dir / file.filename
+
     with file_path.open("wb") as f:
         f.write(await file.read())
 
-    # ADD filename 기준으로 저장
-    session_files[file.filename] = str(file_path)
-    chat_histories[file.filename] = []
+    # sessionId 기준으로 저장
+    session_files[sessionId] = str(file_path)
+    chat_histories[sessionId] = []
+
     head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(str(file_path))
 
     return templates.TemplateResponse("index.html", {
         "request": request,
         "current_filename": file.filename,
-        "chat_history": chat_histories[file.filename],
+        "current_session": sessionId,
+        "chat_history": chat_histories[sessionId],
         "workflow": None,
         "steps": [],
-        "generated_files": list_generated_files(),
+        "generated_files": list_generated_files(sessionId),
         "preview_images": [],
         "head_columns": head_columns,
         "head_rows": head_rows,
@@ -500,24 +513,27 @@ def _load_corr_csv(csv_path: str | None) -> dict:  # [NEW]
 
 # [ADD] 업로드된 파일로 워크플로우를 한 번에 실행하는 엔드포인트
 @app.post("/run_workflow/", response_class=HTMLResponse)
-async def run_workflow(request: Request, filename: str = Form(None)):
+async def run_workflow(request: Request, sessionId: str = Form(None), filename: str = Form(None)):
     # 파일이 없으면 안내만 보여줌
-    if not filename:
-        generated_files = list_generated_files()
+    if sessionId not in session_files:
+        generated_files = list_generated_files(sessionId)
         preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
         return templates.TemplateResponse("index.html", {
-            "request": request, "reply": "⚠️ 먼저 CSV를 업로드하세요.",
+            "request": request, "reply": "⚠️ 먼저 CSV를 업로드하세요.","current_session": None,
             "current_filename": None, "generated_files": generated_files, "preview_images": preview_images,
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
             "corr": {"headers": [], "rows": []},
         })
-    file_path = UPLOAD_DIR / filename
+    file_path = Path(session_files[sessionId])
+    filename = file_path.name
+    print(file_path, filename)
+
     if not file_path.exists():
-        generated_files  = list_generated_files()
+        generated_files  = list_generated_files(sessionId)
         preview_images = [f for f in generated_files if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
         return templates.TemplateResponse("index.html", {
-            "request": request, "reply": "⚠️ 업로드된 파일을 찾지 못했습니다.",
+            "request": request, "reply": "⚠️ 업로드된 파일을 찾지 못했습니다.", "current_session": sessionId,
             "current_filename": filename, "generated_files": generated_files, "preview_images": preview_images,
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
@@ -526,14 +542,15 @@ async def run_workflow(request: Request, filename: str = Form(None)):
 
     # 워크플로우 실행
     try:
-        code, stdout, stderr = run_ts_workflow(file_path, filename, message="분석해줘")
+        code, stdout, stderr = run_ts_workflow(file_path, sessionId, message="분석해줘")
+        print(file_path, sessionId, filename)
         if code != 0:
             reply = f"❌ 오류: {stderr.strip() or 'unknown error'}"
-            generated_files  = list_generated_files()
+            generated_files  = list_generated_files(sessionId)
             preview_images  = [f for f in generated_files if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
             hc, hr, dc, dr = get_csv_preview(str(file_path))
             return templates.TemplateResponse("index.html", {
-                "request": request, "reply": reply, "current_filename": filename,
+                "request": request, "reply": reply, "current_filename": filename, "current_session": sessionId,
                 "generated_files": generated_files, "preview_images": preview_images, "workflow": None, "steps": [],
                 "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr,
                 "corr": {"headers": [], "rows": []},
@@ -541,6 +558,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
 
         # JSON 파싱 → 카드 데이터 구성
         output_str = (stdout or "").strip()
+        print("output_str", output_str)
         wf_raw, _ = extract_workflow_dict(output_str)
 
         # (선택) 파싱 실패 시 최근 생성 이미지로 최소 Visualization 카드라도 띄우기
@@ -550,12 +568,14 @@ async def run_workflow(request: Request, filename: str = Form(None)):
             for p in OUTPUT_DIR.glob("*"):
                 if p.is_file() and p.suffix.lower() in {".png",".jpg",".jpeg",".gif",".webp"}:
                     if now - p.stat().st_mtime <= 15:
-                        recent.append(f"/outputs/{p.name}")
+                        recent.append(f"/outputs/{sessionId}/{p.name}")
             if recent:
                 wf_raw = {"chartPaths": recent}
 
         # 매핑/스텝 구성
-        workflow_mapped = map_artifacts(wf_raw) if isinstance(wf_raw, dict) else None
+
+        workflow_mapped = map_artifacts(wf_raw, sessionId) if isinstance(wf_raw, dict) else None
+
         # [NEW] Correlation CSV 로드 → 템플릿 전달 + steps 반영
         corr_csv_path = _find_corr_csv_for(filename)          # [NEW]
         corr = _load_corr_csv(corr_csv_path)                  # [NEW]
@@ -564,7 +584,7 @@ async def run_workflow(request: Request, filename: str = Form(None)):
         steps = build_steps(workflow_mapped, corr_has_table) if workflow_mapped else []  # [CHANGED]
 
         # 파일/미리보기/기술통계
-        generated_files = list_generated_files()
+        generated_files = list_generated_files(sessionId)
         preview_images = [f for f in generated_files if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
         hc, hr, dc, dr = get_csv_preview(str(file_path))
 
@@ -578,14 +598,14 @@ async def run_workflow(request: Request, filename: str = Form(None)):
 
 
         return templates.TemplateResponse("index.html", {
-            "request": request, "current_filename": filename,
+            "request": request, "current_filename": filename, "current_session":sessionId,
             "generated_files": generated_files, "preview_images": preview_images,
             "workflow": workflow_mapped, "steps": steps,
             "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr, "corr": corr,
         })
 
     except subprocess.TimeoutExpired:
-        gf = list_generated_files()
+        gf = list_generated_files(sessionId)
         pv = [f for f in gf if f["ext"] in {".png",".jpg",".jpeg",".gif",".webp"}]
         hc, hr, dc, dr = get_csv_preview(str(file_path))
         return templates.TemplateResponse("index.html", {
@@ -599,18 +619,20 @@ async def run_workflow(request: Request, filename: str = Form(None)):
 # 채팅
 # ------------------------------
 @app.post("/chat/", response_class=HTMLResponse)
-async def chat(request: Request, message: str = Form(...), filename: str = Form(None)):
-    if not filename or filename not in session_files:
+async def chat(request: Request, message: str = Form(...), sessionId: str = Form(None), filename: str = Form(None)):
+    if sessionId not in session_files:
         reply = "⚠️ 파일이 유효하지 않습니다. CSV를 먼저 업로드해주세요."
         return templates.TemplateResponse("index.html", {"request": request, "reply": reply})
 
-    file_path = session_files[filename]
-    chat_history = chat_histories.get(filename, [])
+    file_path = Path(session_files[sessionId])
+    filename = file_path.name
+
+    chat_history = chat_histories.get(sessionId, [])
     chat_history.append({"role": "user", "content": message})
 
     try:
         # ⬇️ 여기: --mode=chat + CONTEXT (파일경로, 세션키)
-        cmd = [NPX, "ts-node", "src/main.ts", "--mode=chat", message, file_path, filename]
+        cmd = [NPX, "ts-node", "src/main.ts", "--mode=chat", message, file_path, sessionId]
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -633,13 +655,14 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
         chat_histories[filename] = chat_history
 
         head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(file_path)
-        generated_files = list_generated_files()
+        generated_files = list_generated_files(sessionId)
         preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
 
         return templates.TemplateResponse("index.html", {
             "request": request,
             "chat_history": chat_history,
             "current_filename": filename,
+            "current_session" : sessionId,
             "head_columns": head_columns,
             "head_rows": head_rows,
             "describe_columns": describe_columns,
@@ -659,112 +682,3 @@ async def chat(request: Request, message: str = Form(...), filename: str = Form(
             "reply": reply,
             "current_filename": filename,
         })
-
-    #     if proc.returncode != 0:
-    #         reply = f"❌ 오류: {stderr.strip()}"
-    #     else:
-    #         try:
-    #             output_str = (stdout or "").strip() 
-    #             print("stdout decoded:", output_str)
-    #             response_json = coerce_to_json(output_str)   # [MOD]
-    #             if not response_json:
-    #                 raise ValueError("json parse failed")
-
-    #             chat_answers = response_json.get("answers", [])
-    #             chat_history = [{"role": "user", "content": message}]
-                
-    #             for answer in chat_answers:
-    #                 content = (answer.get("message") or {}).get("content", "")
-    #                 if content and not looks_like_dump(content):
-    #                     chat_history.append({"role": "bot", "content": content})
-    #                 elif content:
-    #                     chat_history.append({"role": "bot", "content": "👉 아래 단계별 카드에서 분석 결과를 확인하세요."})
-
-    #             generated_files = list_generated_files()
-    #             preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
-
-                
-    #             # ========= [ADD] 워크플로 추출 및 산출물 URL 매핑 =========
-    #             workflow = None
-    #             candidates = [
-    #                 response_json.get("workflow"),
-    #                 response_json.get("result"),
-    #                 response_json,  # 최상위가 곧 워크플로일 수도 있음
-    #             ]
-    #             for cand in candidates:
-    #                 if isinstance(cand, dict) and (
-    #                     "columnStats" in cand or "mlModelRecommendation" in cand
-    #                 ):
-    #                     workflow = cand
-    #                     break
-
-    #             workflow_mapped = map_artifacts(workflow) if workflow else None
-    #             # ========= [ADD] 끝 =========
-                
-    #             steps = build_steps(workflow_mapped) if workflow_mapped else []  # [ADD]
-    #             if filename:
-    #                 file_path = UPLOAD_DIR / filename
-    #                 head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(str(file_path))
-    #             else:
-    #                 head_columns, head_rows, describe_columns, describe_rows = [], [], [], []
-
-    #             return templates.TemplateResponse("index.html", {
-    #                 "request": request,
-    #                 "chat_history": chat_history,
-    #                 "current_filename": filename,
-    #                 "generated_files": generated_files,
-    #                 "preview_images": preview_images,
-    #                 # ========= [ADD] 템플릿에 워크플로 전달 =========
-    #                 "workflow": workflow_mapped,
-    #                 "steps": steps,
-    #                 "head_columns": head_columns,
-    #                 "head_rows": head_rows,
-    #                 "describe_columns": describe_columns,
-    #                 "describe_rows": describe_rows,
-    #                 # ============================================
-    #             })
-
-    #         except Exception:
-    #             reply = f"⚠️ JSON 파싱 실패:\n{(stdout or'').strip()}"
-
-
-    #     generated_files = list_generated_files()
-    #     preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
-    #     if filename:
-    #         file_path = UPLOAD_DIR / filename
-    #         head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(str(file_path))
-    #     else:
-    #         head_columns, head_rows, describe_columns, describe_rows = [], [], [], []
-
-
-    #     return templates.TemplateResponse("index.html", {
-    #         "request": request,
-    #         "reply": reply,
-    #         "current_filename": filename,
-    #         "generated_files": generated_files,
-    #         "preview_images": preview_images,
-    #         # ========= [ADD] 에러 시에도 키 존재하도록 =========
-    #         "workflow": None,
-    #         "steps": [],
-    #         "head_columns": head_columns,
-    #         "head_rows": head_rows,
-    #         "describe_columns": describe_columns,
-    #         "describe_rows": describe_rows,
-    #         # ==============================================
-    #     })
-
-    # except subprocess.TimeoutExpired:
-    #     generated_files = list_generated_files()
-    #     preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
-
-    #     return templates.TemplateResponse("index.html", {
-    #         "request": request,
-    #         "reply": "⚠️ 응답 시간 초과",
-    #         "current_filename": filename,
-    #         "generated_files": generated_files,
-    #         "preview_images": preview_images,
-    #         # ========= [ADD] 에러 시에도 키 존재하도록 =========
-    #         "workflow": None,
-    #         "steps": [],
-    #         # ==============================================
-    #     })

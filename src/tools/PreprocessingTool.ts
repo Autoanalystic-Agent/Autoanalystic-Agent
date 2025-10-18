@@ -181,8 +181,11 @@ export class PreprocessingTool {
 
   public async runPreprocessing(request: PreprocessingInput): Promise<PreprocessingOutput> { // [FIX]
     // CSV 로딩
-    const defaultDir = path.join(process.cwd(), "src/uploads");
-    const cleanedFilePath = request.filePath.replace(/^.*uploads[\\/]/, "");
+    const sessionId = request.sessionId; // 여기서 sessionId를 받아야 함
+    const defaultDir = sessionId
+    ? path.join(process.cwd(), "src/uploads", sessionId) // 세션별 폴더
+    : path.join(process.cwd(), "src/uploads", "default"); // sessionId 없을 때 기본
+    const cleanedFilePath = request.filePath.replace(new RegExp(`^.*${sessionId}[\\\\/]`), "").replace(/^.*uploads[\\/]/, "");
     const resolvedPath = path.join(defaultDir, cleanedFilePath);
 
     try {
@@ -213,11 +216,16 @@ export class PreprocessingTool {
       }
     }
     
+    const outputDir = request.sessionId
+      ? path.join(process.cwd(), "src/outputs", request.sessionId) // 세션별 출력
+      : path.join(process.cwd(), "src/outputs");
+
+    await fs.mkdir(outputDir, { recursive: true });
+
     const outputFileName = `preprocessed_${cleanedFilePath}`;
-    const outputDir = path.join(process.cwd(), "src/outputs"); // [FIX]
-    await fs.mkdir(outputDir, { recursive: true });            // [FIX]
-    const outputPath = path.join(outputDir, outputFileName);   // [FIX]
-    
+    const outputPath = path.join(outputDir, outputFileName);
+
+
     const csv = stringify(this.data, { header: true });
     await fs.writeFile(outputPath, csv, "utf-8");
 

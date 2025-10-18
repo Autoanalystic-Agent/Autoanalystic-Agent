@@ -42,7 +42,9 @@ export class MachineLearningTool {
     const { filePath, selectorResult } = input;
 
     const timestamp = Date.now();
-    const outputDir = path.join("src/outputs");
+    const outputDir = input.sessionId
+              ? path.join(process.cwd(), "src/outputs", input.sessionId) // 세션별 출력
+              : path.join(process.cwd(), "src/outputs");
     fs.mkdirSync(outputDir, { recursive: true });
 
     // 2. Python 실행 커맨드 구성
@@ -69,8 +71,8 @@ export class MachineLearningTool {
 
         // 보고서 경로(텍스트/HTML 등) — 파이썬 스크립트가 생성한다고 가정
         // 필요 시 train_ml_model.py에서 실제 파일명 규칙만 맞추면 됨
-        const reportTxtPath = path.join("src/outputs", `${timestamp}_report.txt`);
-        const reportHtmlPath = path.join("src/outputs", `${timestamp}_report.html`);
+        const reportTxtPath = path.join(outputDir, `${timestamp}_report.txt`);
+        const reportHtmlPath = path.join(outputDir, `${timestamp}_report.html`);
         const reportPath = fs.existsSync(reportHtmlPath) ? reportHtmlPath : reportTxtPath;
 
         // ✅ 반환 표면: MachineLearningOutput
@@ -78,7 +80,7 @@ export class MachineLearningTool {
         // - modelPath/rawLog는 추가 정보 (UI에서 안 쓰면 무시됨)
         const out: MachineLearningOutput = {
           reportPath,
-          modelPath: path.join("src/outputs", modelFile),
+          modelPath: path.join(outputDir, modelFile),
           rawLog: (stdout || "").toString().trim(),
         };
 

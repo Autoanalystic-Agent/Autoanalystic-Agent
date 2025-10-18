@@ -43,9 +43,15 @@ export class VisualizationTool {
     // ✅ 기존 구조분해 + correlation(선택) 추가
     const { filePath, selectorResult, correlation } = input;
 
+    const sessionId = input.sessionId;
+    console.log(input.sessionId)
     // 1. 출력 폴더 생성
     const timestamp = Date.now();
-    const outputDir = path.join("src/outputs");
+    const outputDir = input.sessionId
+          ? path.join(process.cwd(), "src/outputs", input.sessionId) // 세션별 출력
+          : path.join(process.cwd(), "src/outputs");
+    
+    console.log(outputDir)
     fs.mkdirSync(outputDir, { recursive: true });
 
     // 2. Python 실행 커맨드 구성
@@ -82,14 +88,14 @@ export class VisualizationTool {
 
         // 웹에서 접근 가능한 URL로 변환 (항상 슬래시 사용, 선행 슬래시 포함)
         const urls = files
-          .map((f) => `/outputs/${f}`)
+          .map((f) => `/${outputDir}/${f}`)
           .map((u) => u.replace(/\\/g, "/"));          // 윈도우 역슬래시 → 슬래시
 
         // ✅ CorrelationTool이 생성한 히트맵이 있으면 함께 반환 목록에 포함
         //    (예: correlation.heatmapPath === "src/outputs/corr_heatmap_123.png")
         if (correlation?.heatmapPath && fs.existsSync(correlation.heatmapPath)) {
           const basename = path.basename(correlation.heatmapPath);
-          const webUrl = `/outputs/${basename}`.replace(/\\/g, "/");
+          const webUrl = `/${outputDir}/${basename}`.replace(/\\/g, "/");
           if (!urls.includes(webUrl)) urls.push(webUrl);
         }
 

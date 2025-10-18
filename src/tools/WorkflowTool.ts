@@ -141,7 +141,7 @@ export class WorkflowTool {
   }
 
   // ✅ 반환 타입을 공통 타입으로 고정
-  public async run({ filePath }: { filePath: string }): Promise<WorkflowResult & {
+  public async run({ filePath }: { filePath: string }, {sessionId} : {sessionId?:string}): Promise<WorkflowResult & {
     steps: {
       basic: { input: BasicAnalysisInput; output: BasicAnalysisOutput };
       correlation?: { input: CorrelationInput; output: CorrelationOutput; artifacts: { matrixCsv: string; pairsJson: string } };
@@ -151,8 +151,9 @@ export class WorkflowTool {
       machineLearning: { input: MachineLearningInput; output: { reportPath: string } | MachineLearningOutput | string };
     };
   }> {
+
     if (!filePath) throw new Error("파일 경로(filePath)는 필수입니다.");
-    this.log("START", `filePath=${filePath}`);
+    this.log("START", `filePath=${filePath}, sessionId=${sessionId ?? "none"}`);
 
     // 1) BasicAnalysis
     const analyzer = new BasicAnalysisTool();
@@ -201,6 +202,7 @@ export class WorkflowTool {
     const visualizer = new VisualizationTool();
     const visualizationInput: VisualizationInput = {          // [ADD]
       filePath,
+      sessionId,
       selectorResult: { selectedColumns, recommendedPairs },
       correlation: { matrixPath: corrArtifacts?.matrixCsv },
     };
@@ -220,14 +222,17 @@ export class WorkflowTool {
     const preprocessingInput : PreprocessingInput = {
       filePath,
       recommendations: preprocessingRecommendations,
+      sessionId,
     };
     const preprocessingOutput: PreprocessingOutput = await preprocessor.runPreprocessing(preprocessingInput); // [ADD]
     const effectiveFilePath = preprocessingOutput?.preprocessedFilePath || filePath;
+
 
     // 6) MachineLearning
     const mlTool = new MachineLearningTool();
     const mlInput: MachineLearningInput = {                   // [ADD]
       filePath: effectiveFilePath,
+      sessionId,
       selectorResult: {
         targetColumn: targetColumn ?? undefined,
         problemType: (problemType ?? undefined) as Exclude<ProblemType, null> | undefined, // [FIX] 안전 캐스팅
