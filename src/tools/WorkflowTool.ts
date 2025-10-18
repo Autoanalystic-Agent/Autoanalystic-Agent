@@ -170,13 +170,8 @@ export class WorkflowTool {
       const corrTool = new CorrelationTool();
       const corrData = this.buildCorrelationData(filePath, columnStats);
       if (Object.keys(corrData).length) {
-        const corrInput: CorrelationInput = { data: corrData, method: "pearson", dropna: true, threshold: 0.7 }; // [ADD]
+        const corrInput: CorrelationInput = { filePath, sessionId, data: corrData, method: "pearson", dropna: true, threshold: 0.7 }; // [ADD]
         const corrOutput: CorrelationOutput = await corrTool.run(corrInput);                                       // [ADD]
-        correlationResults = corrOutput;
-        corrArtifacts = this.saveCorrelationArtifacts(filePath, corrOutput); // << UI용 파일 생성
-
-        correlationStep = { input: corrInput, output: corrOutput, artifacts: corrArtifacts }; // [ADD]
-        this.log("CORR", `method=${correlationResults.method}, highPairs=${correlationResults.highCorrPairs.length}`);
       } else {
         this.log("CORR", "no numeric columns → skip");
       }
@@ -226,7 +221,6 @@ export class WorkflowTool {
     };
     const preprocessingOutput: PreprocessingOutput = await preprocessor.runPreprocessing(preprocessingInput); // [ADD]
     const effectiveFilePath = preprocessingOutput?.preprocessedFilePath || filePath;
-
 
     // 6) MachineLearning
     const mlTool = new MachineLearningTool();
