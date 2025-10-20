@@ -107,7 +107,7 @@ async function main() {
   const csvFilePath = rest[1];
   const argSession = rest[2];
   const sessionId = rest[2];     // FastAPI에서 전달된 sessionId
-  console.log(sessionId)
+
   const sessionKey = argSession || (csvFilePath ? `local:${csvFilePath}` : "local:default");
   const histories = loadHistories(sessionKey);
 
@@ -202,7 +202,7 @@ async function main() {
   // 기본: chat 모드
   {
     let prompt = `### SYSTEM\n${CHAT_SYSTEM}\n\n### USER\n(아래 요청에 한국어로만 답하세요)\n${userMessage}`;
-    if (csvFilePath) prompt += `\n\n### CONTEXT\nCSV_FILE_PATH=${csvFilePath}`;
+    if (csvFilePath) prompt += `\n\n### CONTEXT\nCSV_FILE_PATH=${csvFilePath} \n SESSIONID=${sessionId}`;
 
     const answers = await agent.conversate(prompt);
     saveHistories(sessionKey, answers);
