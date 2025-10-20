@@ -103,7 +103,7 @@ export interface PreprocessingInput {
   sessionId?: string;
 }
 export interface PreprocessingOutput {
-  preprocessedFilePath?: string;
+  preprocessedFilePath?: string | null;
   messages?: string[];
 }
 
@@ -127,14 +127,14 @@ export interface MachineLearningOutput {
 export interface WorkflowResult {
   filePath: string;
   columnStats: ColumnStat[];
-  correlationResults?: CorrelationOutput;
+  correlationResults: CorrelationOutput | null;
   selectedColumns: string[];
   recommendedPairs: { column1: string; column2: string }[];
   preprocessingRecommendations: PreprocessStep[];
   targetColumn: string | null;
   problemType: Exclude<ProblemType, null> | null;
-  mlModelRecommendation: SelectorOutput['mlModelRecommendation'];
+  mlModelRecommendation: SelectorOutput['mlModelRecommendation'] | null;
   chartPaths: string[];
-  preprocessedFilePath?: string;
-  mlResultPath?: { reportPath: string }; // FastAPI가 기대하는 표면
+  preprocessedFilePath: string | null;
+  mlResultPath: { reportPath: string } | null; // FastAPI가 기대하는 표면
 }

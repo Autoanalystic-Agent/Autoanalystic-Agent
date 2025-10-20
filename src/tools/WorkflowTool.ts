@@ -171,7 +171,12 @@ export class WorkflowTool {
       const corrData = this.buildCorrelationData(filePath, columnStats);
       if (Object.keys(corrData).length) {
         const corrInput: CorrelationInput = { filePath, sessionId, data: corrData, method: "pearson", dropna: true, threshold: 0.7 }; // [ADD]
-        const corrOutput: CorrelationOutput = await corrTool.run(corrInput);                                       // [ADD]
+        const corrOutput: CorrelationOutput = await corrTool.run(corrInput); 
+        
+        correlationResults = corrOutput;
+        corrArtifacts = this.saveCorrelationArtifacts(filePath, corrOutput);
+        correlationStep = { input: corrInput, output: corrOutput, artifacts: corrArtifacts };
+
       } else {
         this.log("CORR", "no numeric columns → skip");
       }
@@ -184,150 +189,109 @@ export class WorkflowTool {
     const selectorInput: SelectorInput = { columnStats, correlationResults }; // [ADD]
     const selectorOutput: SelectorOutput = await selector.run(selectorInput); // [ADD]
 
-    const {
-      selectedColumns,
-      recommendedPairs,
-      preprocessingRecommendations,
-      targetColumn,
-      problemType,
-      mlModelRecommendation,
-    } = selectorOutput;
+    // ✅ undefined 방지: 전부 기본값 보장
+    const selectedColumns = selectorOutput?.selectedColumns ?? [];
+    const recommendedPairs = selectorOutput?.recommendedPairs ?? [];
+    const preprocessingRecommendations = selectorOutput?.preprocessingRecommendations ?? [];
+    const targetColumn = selectorOutput?.targetColumn ?? null;
+    const problemType = (selectorOutput?.problemType ?? null) as Exclude<ProblemType, null> | null;
+    const mlModelRecommendation = selectorOutput?.mlModelRecommendation ?? null;
 
     // 4) Visualization
     const visualizer = new VisualizationTool();
-    const visualizationInput: VisualizationInput = {          // [ADD]
-      filePath,
-      sessionId,
-      selectorResult: { selectedColumns, recommendedPairs },
-      correlation: { matrixPath: corrArtifacts?.matrixCsv },
-    };
-    const vizRaw = await visualizer.run(visualizationInput);
-    // vizRaw가 배열이면 그대로, 객체면 .chartPaths 사용
-    const chartPaths: string[] = Array.isArray(vizRaw)
-      ? vizRaw
-      : (vizRaw as VisualizationOutput).chartPaths;
-
-    // (선택) 단계 I/O 로그를 유지하려면 VisualizationOutput 객체 형태로 맞춰 저장
-    const visualizationOutput: VisualizationOutput = { chartPaths };
+    let chartPaths: string[] = [];
+    let visualizationOutput: VisualizationOutput = { chartPaths: [] };
+    try {
+      const visualizationInput: VisualizationInput = {          // [ADD]
+        filePath,
+        sessionId,
+        selectorResult: { selectedColumns, recommendedPairs },
+        correlation: { matrixPath: corrArtifacts?.matrixCsv },
+      };
+      const vizRaw = await visualizer.run(visualizationInput);
+      chartPaths = Array.isArray(vizRaw) ? vizRaw : (vizRaw as VisualizationOutput)?.chartPaths ?? [];
+      visualizationOutput = { chartPaths };
+    } catch (e:any) {
+      this.log("VIZ", `skip: ${e?.message ?? e}`);
+    }
 
     // 5) Preprocessing
     //    ⬇️ PreprocessingTool은 fillna: "drop" | "mean" | "mode" 만 지원.
     //       만약 권고안에 "median"이 있다면 안전하게 "mean"으로 매핑.
     const preprocessor = new PreprocessingTool();
-    const preprocessingInput : PreprocessingInput = {
-      filePath,
-      recommendations: preprocessingRecommendations,
-      sessionId,
-    };
-    const preprocessingOutput: PreprocessingOutput = await preprocessor.runPreprocessing(preprocessingInput); // [ADD]
-    const effectiveFilePath = preprocessingOutput?.preprocessedFilePath || filePath;
+    let preprocessingOutput: PreprocessingOutput | undefined;
+    let effectiveFilePath = filePath;
+    try{
+      const preprocessingInput : PreprocessingInput = {
+        filePath,
+        recommendations: preprocessingRecommendations,
+        sessionId,
+      };
+      preprocessingOutput = await preprocessor.runPreprocessing(preprocessingInput);
+      effectiveFilePath = preprocessingOutput?.preprocessedFilePath || filePath;
+    } catch (e:any){
+      this.log("PREPROC", `skip: ${e?.message ?? e}`);
+    }
 
     // 6) MachineLearning
     const mlTool = new MachineLearningTool();
-    const mlInput: MachineLearningInput = {                   // [ADD]
-      filePath: effectiveFilePath,
-      sessionId,
-      selectorResult: {
-        targetColumn: targetColumn ?? undefined,
-        problemType: (problemType ?? undefined) as Exclude<ProblemType, null> | undefined, // [FIX] 안전 캐스팅
-        mlModelRecommendation: mlModelRecommendation ?? undefined,
-      },
-    };
+    let mlResultPath: { reportPath: string } | undefined = undefined;
 
-    // 🔧 문자열/객체 모두 { reportPath: string }으로 정규화 (map_artifacts와 호환)
-    const mlRaw = await mlTool.run(mlInput);
-    const mlResultPath =
-      typeof mlRaw === "string"
-        ? { reportPath: mlRaw }
-        : { reportPath: (mlRaw as MachineLearningOutput).reportPath };
+    try{
+      const mlInput: MachineLearningInput = {                   // [ADD]
+        filePath: effectiveFilePath,
+        sessionId,
+        selectorResult: {
+          targetColumn: targetColumn ?? undefined,
+          problemType: (problemType ?? undefined) as Exclude<ProblemType, null> | undefined, // [FIX] 안전 캐스팅
+          mlModelRecommendation: mlModelRecommendation ?? undefined,
+        },
+      };
+    
+      // 🔧 문자열/객체 모두 { reportPath: string }으로 정규화 (map_artifacts와 호환)
+      const mlRaw = await mlTool.run(mlInput);
+      mlResultPath =
+        typeof mlRaw === "string"
+          ? { reportPath: mlRaw }
+          : { reportPath: (mlRaw as MachineLearningOutput).reportPath };
+    } catch (e:any){
+      this.log("ML", `skip: ${e?.message ?? e}`);
+    }
 
     this.log("DONE", "workflow completed.");
 
     // ✅ WorkflowResult 형태로 반환
     return {
       filePath,
-      columnStats,
-      correlationResults,
-      selectedColumns,
-      recommendedPairs,
-      preprocessingRecommendations,
+      columnStats: columnStats ?? [],
+      correlationResults: correlationResults ?? null,
+      selectedColumns: selectedColumns ?? [],
+      recommendedPairs: recommendedPairs ?? [],
+      preprocessingRecommendations: preprocessingRecommendations ?? [],
       targetColumn: targetColumn ?? null,
-      problemType: (problemType ?? null) as Exclude<ProblemType, null> | null, // [FIX]
+      problemType: problemType ?? null,
       mlModelRecommendation: mlModelRecommendation ?? null,
-      chartPaths,
-      preprocessedFilePath: preprocessingOutput?.preprocessedFilePath,
-      mlResultPath,
+      chartPaths: chartPaths ?? [],
+      preprocessedFilePath: preprocessingOutput?.preprocessedFilePath ?? null,
+      mlResultPath: mlResultPath ?? null,
       // [ADD] 단계별 I/O 기록(디버그/리포트용)
       steps: {
-        basic: { input: basicInput, output: basicOutput },
+        basic: { input: { filePath }, output: { columnStats } as any },
         ...(correlationStep ? { correlation: correlationStep } : {}),
         selector: { input: selectorInput, output: selectorOutput },
-        visualization: { input: visualizationInput, output: visualizationOutput },
-        preprocessing: { input: preprocessingInput, output: preprocessingOutput },
-        machineLearning: { input: mlInput, output: mlRaw },
-      },
-    };
+        visualization: { 
+          input: { filePath, sessionId, selectorResult: { selectedColumns, recommendedPairs }, correlation: { matrixPath: corrArtifacts?.matrixCsv } }, 
+          output: visualizationOutput 
+        },
+        preprocessing: {
+          input: { filePath, recommendations: preprocessingRecommendations, sessionId },
+          output: preprocessingOutput ?? { preprocessedFilePath: null, messages: [] } // ok
+        },
+        machineLearning: { 
+          input: { filePath: effectiveFilePath, sessionId, selectorResult: { targetColumn: targetColumn ?? undefined, problemType: (problemType ?? undefined) as any, mlModelRecommendation: mlModelRecommendation ?? undefined } }, 
+          output: mlResultPath ?? { reportPath: "" } 
+        },
+      }
+    }
   }
-}
-//     //  1. 통계 분석 도구 실행
-//     const analyzer = new BasicAnalysisTool();
-//     const { columnStats } = await analyzer.run({ filePath });
-
-
-//     //  2. 컬럼 추천 도구 실행
-//     const selector = new SelectorTool();
-//     const {
-//       selectedColumns,
-//       recommendedPairs,
-//       preprocessingRecommendations,
-//       targetColumn,
-//       problemType,
-//       mlModelRecommendation,
-//     } = await selector.run({ columnStats });
-
-//     // 3. 시각화 도구 실행
-//     const visualizer = new VisualizationTool();
-//     const chartPaths = await visualizer.run({
-//       filePath,
-//       selectorResult: {
-//         selectedColumns,
-//         recommendedPairs,
-//       },
-//     });
-
-//     // 4. 전처리 실행
-//     const preprocessor = new PreprocessingTool();
-//     const { messages, preprocessedFilePath } = await preprocessor.runPreprocessing({
-//       filePath,
-//       recommendations: preprocessingRecommendations
-//     });
-
-//     // 5. 머신러닝 실행
-//     const mlTool = new MachineLearningTool();
-//     const mlResultPath = await mlTool.run({
-//       filePath : preprocessedFilePath,
-//       selectorResult: {
-//         targetColumn,
-//         problemType,
-//         mlModelRecommendation,
-//       },
-//     });
-
-
-//     //  6. 결과 반환
-//     console.log(`\n [WorkflowTool 완료]`);
-//     return {
-//       filePath,
-//       columnStats,
-//       selectedColumns,
-//       recommendedPairs,
-//       preprocessingRecommendations,
-//       targetColumn,
-//       problemType,
-//       mlModelRecommendation,
-//       chartPaths,
-//       preprocessedFilePath,
-//       mlResultPath,
-//     };
-//   }
-// }
+};
