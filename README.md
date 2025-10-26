@@ -11,6 +11,7 @@
 
 본 프로젝트는 “CSV 데이터 분석 파이프라인 자동화 에이전트”를 목표로 하며, 비전문가도 쉽게 분석을 수행하도록 설계되었습니다.
 
+
 ## 구성 파일
 
 | 경로/파일 | 설명 |
@@ -26,7 +27,6 @@
 
 ## 사용 기술
 
-
 | 카테고리 | 기술 | 비고 |
 |---|---|---|
 | 언어/런타임 | **Python 3.10~3.12**, **TypeScript**, Node.js 20+ | 파이프라인: Py ↔ TS 병행 |
@@ -40,31 +40,32 @@
 
 
 
-## 모델(에이전트) 설명
+## 에이전트 구조 및 시스템 구성요소 설명
 
-아키텍처 개요: LLM이 사용자 의도를 해석해 Basic/Preprocess/Viz/ML 툴을 자동 조합하여 실행하는 에이전트 라우팅 구조입니다. 필요 시 Direct Execute(원클릭)로 전체 파이프라인을 일괄 수행합니다.
+**아키텍처 개요:**  
+LLM이 사용자 의도를 해석하여 Basic, Preprocess, Visualization, Machine Learning 등  
+여러 툴을 자동으로 조합·실행하는 **에이전트 라우팅 구조**입니다.  
+필요 시 **Direct Execute(원클릭)** 기능을 통해 전체 파이프라인을 일괄 수행할 수 있습니다.
 
-**주요 기능**: <br/>
+**주요 시스템 구성요:**
+1. **BasicAnalysisTool** – 기초 통계 분석  
+2. **CorrelationTool** – 상관관계 계산  
+3. **SelectorTool** – 핵심 컬럼 추천, 전처리·시각화·ML 권장  
+4. **VisualizationTool** – Boxplot, Scatter 등 차트 생성  
+5. **PreprocessingTool** – 결측치 처리, 인코딩, 스케일링  
+6. **MachineLearningTool** – 모델 학습 및 평가  
+7. **WorkflowTool** – 전체 파이프라인 자동 실행 (E2E)
 
-① BasicAnalysisTool(기초 통계)  <br>
+**세션 컨텍스트:**  
+세션 키별 in-memory history를 유지하여  
+사용자의 연속 대화 흐름과 문맥 일관성을 보장합니다.
 
-② CorrelationTool (상관 관계 계산) <br>
+**산출물 표준화:**  
+업로드 → 기초 분석 → 전처리 → 시각화 → 모델 학습 순의 결과물을  
+`src/outputs/{sessionId}/` 하위에 자동 저장합니다.
 
-③ SelectorTool(핵심 컬럼·시각화·전처리·ML 권고) <br>
 
-④ VisualizationTool(Box/Scatter 등) <br>
-
-⑤ PreprocessingTool(결측·인코딩·스케일링) <br>
-
-⑥ MachineLearningTool <br>
-
-⑦ WorkflowTool(E2E) <br>
-
-세션 컨텍스트: 세션 키별 in-memory history(text/describe)로 연속 대화의 일관성을 유지합니다. <br>
-
-산출물 표준화: 업로드→기초분석→전처리→시각화→모델학습→리포트 결과물을 src/outputs/{sessionId}/ 하위에 일괄 저장합니다. <br>
-
-### 적용 예시 (간단 실행):
+## 적용 예시 (간단 실행):
 ```
 
 0) 요구 사항
@@ -135,6 +136,8 @@ VS Code 사용 시: Ctrl/Cmd + Shift + P → Python: Select Interpreter → .ven
 - /run_workflow : 업로드→분석→전처리→시각화→학습→리포트 원클릭
 
 ```
+
+
 ## License
 이 프로젝트는 **MIT Licens**를 따릅니다.
 자세한 내용은 [LICENSE](./LICENSE) 파일을 참고하세요.
@@ -143,8 +146,7 @@ VS Code 사용 시: Ctrl/Cmd + Shift + P → Python: Select Interpreter → .ven
 > Agentica, FastAPI, OpenAI SDK 등의 오픈소스 라이브러리를 포함합니다.
 
 
-
-### ⚙️ Third-Party Notice
+### Third-Party Notice
 - [Agentica](https://github.com/wrtnlabs/agentica) (MIT License)  
 - [FastAPI](https://fastapi.tiangolo.com/) (MIT License)  
 - [OpenAI SDK](https://github.com/openai/openai-python) (MIT License)
