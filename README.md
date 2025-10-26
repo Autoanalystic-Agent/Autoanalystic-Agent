@@ -36,15 +36,17 @@ ML/딥러닝: scikit-learn, XGBoost, TensorFlow/Keras
 아키텍처 개요: LLM이 사용자 의도를 해석해 Basic/Preprocess/Viz/ML 툴을 자동 조합하여 실행하는 에이전트 라우팅 구조입니다. 필요 시 Direct Execute(원클릭)로 전체 파이프라인을 일괄 수행합니다.
 
 주요 기능:
-① BasicAnalysisTool(기초 통계) <br>
-② SelectorTool(핵심 컬럼·시각화·전처리·ML 권고) <br>
-③ VisualizationTool(Box/Scatter 등) <br>
-④ PreprocessingTool(결측·인코딩·스케일링) v
-⑤ MachineLearningTool ⑥ WorkflowTool(E2E)<br>
+① BasicAnalysisTool(기초 통계)  <br>
+② CorrelationTool (상관 관계 계산) <br>
+③ SelectorTool(핵심 컬럼·시각화·전처리·ML 권고) <br>
+④ VisualizationTool(Box/Scatter 등) <br>
+⑤ PreprocessingTool(결측·인코딩·스케일링) <br>
+⑥ MachineLearningTool <br>
+⑦ WorkflowTool(E2E) <br>
 
-세션 컨텍스트: 세션 키별 in-memory history(text/describe)로 연속 대화의 일관성을 유지합니다.
+세션 컨텍스트: 세션 키별 in-memory history(text/describe)로 연속 대화의 일관성을 유지합니다. <br>
 
-산출물 표준화: 업로드→기초분석→전처리→시각화→모델학습→리포트 결과물을 src/outputs/{sessionId}/ 하위에 일괄 저장합니다.
+산출물 표준화: 업로드→기초분석→전처리→시각화→모델학습→리포트 결과물을 src/outputs/{sessionId}/ 하위에 일괄 저장합니다. <br>
 
 ### 적용 예시 (간단 실행):
 ```
@@ -127,7 +129,7 @@ VS Code 사용 시: Ctrl/Cmd + Shift + P → Python: Select Interpreter → .ven
 
 
 ### ⚙️ Third-Party Notice
-- [Agentica](https://github.com/agentica-ai/agentica) (MIT License)  
+- [Agentica](https://github.com/wrtnlabs/agentica) (MIT License)  
 - [FastAPI](https://fastapi.tiangolo.com/) (MIT License)  
 - [OpenAI SDK](https://github.com/openai/openai-python) (MIT License)
 
