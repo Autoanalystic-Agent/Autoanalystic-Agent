@@ -64,7 +64,7 @@ export class CorrelationTool {
    * 상관관계 계산 실행 메서드
    */
   public async run(input: CorrelationInput): Promise<CorrelationOutput> {
-    const { filePath , data, method = "pearson", dropna = true, threshold = 0.5, sessionId} = input;
+    const { filePath , data, method = "pearson", dropna = true, threshold = 0.5} = input;
     console.log("\n[CorrelationTool] 상관관계 계산 시작");
 
     let numericData = data;
@@ -76,9 +76,11 @@ export class CorrelationTool {
       throw new Error("유효한 숫자형 데이터가 없습니다.");
     }
 
+    let sessionId = input.sessionId ?? this.inferSessionIdFromPath(filePath);
+
     const timestamp = Date.now();
-    const outputDir = input.sessionId
-              ? path.join(process.cwd(), "src/outputs", input.sessionId) // 세션별 출력
+    const outputDir = sessionId
+              ? path.join(process.cwd(), "src/outputs", sessionId) // 세션별 출력
               : path.join(process.cwd(), "src/outputs");
     fs.mkdirSync(outputDir, { recursive: true });
 
@@ -165,6 +167,18 @@ export class CorrelationTool {
     }
     return data;
   }
+
+  private inferSessionIdFromPath(filePath: string): string | undefined {
+  // .../uploads/<sessionId>/<file>.csv 형태를 가정
+  // 부모 디렉터리 이름을 후보로 사용
+  try {
+    const parent = path.basename(path.dirname(filePath));
+    // UUID-like or sufficiently unique directory name만 세션으로 인정
+    if (/^[0-9a-fA-F-]{8,}$/.test(parent)) return parent;
+  } catch {}
+  return undefined;
+}
+
   /**
    * 결측치(null, undefined, NaN) 제거
    */
