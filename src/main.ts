@@ -13,6 +13,7 @@ import { MachineLearningTool } from "./tools/MachineLearningTool";
 // 필요시 CorrelationTool도 import
 
 // 기타
+import { AgentController } from "./agent/AgentController";
 import typia from "typia";
 import readline from "readline";
 import dotenv from "dotenv";
@@ -220,9 +221,35 @@ async function main() {
   }
 
   // 기본: chat 모드
+  const controller = new AgentController();
+  const reply = (text: string) => {
+    console.log(text);
+    return;
+  };
   {
     let prompt = `### SYSTEM\n${CHAT_SYSTEM}\n\n### USER\n(아래 요청에 한국어로만 답하세요)\n${userMessage}`;
     if (csvFilePath) prompt += `\n\n### CONTEXT\nCSV_FILE_PATH=${csvFilePath} \n SESSIONID=${sessionId}`;
+
+    
+
+    // 🔒 라우팅 힌트만 주입(조기 return 없음) ← 여기 추가
+    if (/모델|예측|학습/.test(userMessage)) {
+      prompt += `
+    ### ROUTE (HARD)
+    - 반드시 **MachineLearningTool**만 호출하세요.
+    - **BasicAnalysisTool/SelectorTool/VisualizationTool/CorrelationTool/PreprocessingTool** 호출 금지.
+    - 위반 시 "routing_error" 라고만 답하세요.
+    `;
+    }
+    if (/시각화/.test(userMessage)) {
+      prompt += `
+    ### ROUTE (HARD)
+    - 반드시 **VisualizationTool**만 호출하세요.
+    - **BasicAnalysisTool/SelectorTool/MachineLearningTool/CorrelationTool/PreprocessingTool** 호출 금지.
+    - 위반 시 "routing_error" 라고만 답하세요.
+    `;
+    }
+
 
     let finalText = "";
 
@@ -240,41 +267,77 @@ async function main() {
       const args = (e.arguments ?? {}) as any;
       const slots = getSlots(sessionKey);
 
-      // VisualizationTool에 selector/corr 자동 주입
-      if (/시각화\s*도구|VisualizationTool/i.test(op)) {
-        if (!args.selectorResult && slots.selector) {
-          const sel = safeParse(slots.selector) ?? slots.selector;
-          if (sel?.selectedColumns && sel?.recommendedPairs) {
-            args.selectorResult = {
-              selectedColumns: sel.selectedColumns,
-              recommendedPairs: sel.recommendedPairs,
-            };
-          }
-        }
-        if (!args.correlation && slots.corr) {
-          const corr = safeParse(slots.corr) ?? slots.corr;
-          if (corr?.heatmapPath || corr?.matrixPath) {
-            args.correlation = {
-              heatmapPath: corr.heatmapPath,
-              matrixPath: corr.matrixPath,
-            };
-          }
-        }
-        e.arguments = args; // 주입 반영
+
+      // ① Selector 호출 시: null 인자 정리
+      const isSelectorCall =
+        /SelectorTool|컬럼\s*선택\s*도구/i.test(op) || Array.isArray(args?.columnStats);
+      if (isSelectorCall && args.correlationResults === null) {
+        delete args.correlationResults;
+        e.arguments = args;
       }
 
-      // MachineLearningTool에 selector 핵심 필드 자동 주입
-      if (/머신러닝\s*도구|MachineLearningTool/i.test(op)) {
-        if (!args.selectorResult && slots.selector) {
-          const sel = safeParse(slots.selector) ?? slots.selector;
-          args.selectorResult = {
-            targetColumn: sel?.targetColumn ?? null,
-            problemType: sel?.problemType ?? null,
-            mlModelRecommendation: sel?.mlModelRecommendation ?? null,
-          };
-          e.arguments = args;
+      // ② VisualizationTool 감지 보강 (_3_run 포함)
+      const isVizCall =
+        /VisualizationTool|시각화\s*도구/i.test(op) || /_3_run$/.test(op);
+
+      if (isVizCall) {
+        // slots 우선
+        let sel = safeParse(slots.selector) ?? slots.selector;
+
+        // slots 없으면 세션 컨텍스트 폴백
+        if (!sel || !sel.selectedColumns) {
+          const selCtx = controller.getSelectorData(sessionId);
+          if (selCtx) {
+            sel = {
+              selectedColumns: selCtx.selectedColumns,
+              recommendedPairs: selCtx.recommendedPairs,
+            };
+          }
         }
+
+        if (!args.selectorResult && sel?.selectedColumns && sel?.recommendedPairs) {
+          args.selectorResult = {
+            selectedColumns: sel.selectedColumns,
+            recommendedPairs: sel.recommendedPairs,
+          };
+        }
+        if (!args.sessionId) args.sessionId = sessionId;
+
+        e.arguments = args;
       }
+
+      // ③ MachineLearningTool 감지 보강 (_4_run 포함)
+      const isMLCall =
+        /MachineLearningTool|머신러닝\s*도구/i.test(op) || /_4_run$/.test(op);
+
+      if (isMLCall) {
+        let sel = safeParse(slots.selector) ?? slots.selector;
+
+        // slots 없으면 세션 컨텍스트 폴백
+        if (!sel || (!sel.targetColumn && !sel.problemType)) {
+          const selCtx = controller.getSelectorData(sessionId);
+          if (selCtx) {
+            sel = {
+              targetColumn: selCtx.targetColumn,
+              problemType: selCtx.problemType,
+              mlModelRecommendation: selCtx.mlModelRecommendation ?? null,
+            };
+          }
+        }
+
+        if (!args.selectorResult) args.selectorResult = {};
+        if (sel) {
+          args.selectorResult.targetColumn = sel.targetColumn ?? args.selectorResult.targetColumn ?? null;
+          args.selectorResult.problemType = sel.problemType ?? args.selectorResult.problemType ?? null;
+          args.selectorResult.mlModelRecommendation =
+            sel.mlModelRecommendation ?? args.selectorResult.mlModelRecommendation ?? null;
+        }
+        if (!args.sessionId) args.sessionId = sessionId;
+
+        e.arguments = args;
+      }
+
+
 
       console.log("<<<AGENT_EVENT>>>", JSON.stringify({
         type: "call",
@@ -288,7 +351,21 @@ async function main() {
     agent.on("execute", (e) => {
       const op = e.operation?.name ?? "";
       const value = safeParse(e.value) ?? e.value;
+      const args = (e.arguments ?? {}) as any;
       const slots = getSlots(sessionKey);
+      const isSelectorExec =
+        /SelectorTool|컬럼\s*선택\s*도구/i.test(op) || Array.isArray(args?.columnStats);
+
+      if (isSelectorExec && value?.selectedColumns && value?.recommendedPairs) {
+        slots.selector = value;
+        controller.saveSelectorData(sessionId, value, csvFilePath);
+        console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+          type: "saved_selector",
+          sessionId,
+          target: value?.targetColumn,
+          problemType: value?.problemType
+        }));
+      }
 
       if (/기초\s*분석\s*도구|BasicAnalysisTool/i.test(op)) {
         slots.basic = value;
