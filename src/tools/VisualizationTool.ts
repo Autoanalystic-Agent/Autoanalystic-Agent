@@ -43,39 +43,29 @@ export class VisualizationTool {
     // ✅ 기존 구조분해 + correlation(선택) 추가
     const { filePath, selectorResult, correlation } = input;
 
-    const sessionId = input.sessionId;
+    const sessionId = input.sessionId ?? "";
     console.log(input.sessionId)
     // 1. 출력 폴더 생성
-    const timestamp = Date.now();
-    const outputDir = input.sessionId
-          ? path.join(process.cwd(), "src/outputs", input.sessionId) // 세션별 출력
+    const outputDir = sessionId
+          ? path.join(process.cwd(), "src/outputs", sessionId) // 세션별 출력
           : path.join(process.cwd(), "src/outputs");
-    
-    console.log(outputDir)
     fs.mkdirSync(outputDir, { recursive: true });
+    
+    const webBase = sessionId ? `/outputs/${sessionId}` : `/outputs`;
+    const timestamp = Date.now();
 
     // 2. Python 실행 커맨드 구성
     const pythonScriptPath = "src/scripts/visualize_from_json.py";
     const selectorJsonEscaped = JSON.stringify(selectorResult).replace(/"/g, '\\"');
 
     const command = `python ${pythonScriptPath} "${filePath}" "${selectorJsonEscaped}" "${outputDir}" ${timestamp}`;
+    const urls: string[] = [];
 
-    return new Promise((resolve, reject) => {
-      exec(command, (error, stdout, stderr) => {
-        if (error) {
-          console.error("[VisualizationTool 에러]", stderr);
-          reject(stderr);
-          return;
-        }
-        // } else {
-        //   const imageFiles = fs
-        //     .readdirSync(outputDir)
-        //     .filter((f) => f.endsWith(".png") && f.includes(String(timestamp)))
-        //     .map((f) => path.join("outputs", f));
-        //   resolve(imageFiles);
-        // }
-        
-        // ① 확장자 기준으로 이미지 수집
+    await new Promise<void>((resolve, reject) => {
+      exec(command, (error, _stdout, stderr) => {
+        if (error) return reject(new Error(stderr?.toString() || "VisualizationTool error"));
+
+
         // ② 이번 실행에 생성된 파일만 포함(수정시각으로 필터) — 타임스탬프 의존 제거
         const files = fs.readdirSync(outputDir)
           .filter((f) => /\.(png|jpg|jpeg|webp|gif)$/i.test(f))
@@ -87,20 +77,33 @@ export class VisualizationTool {
           });
 
         // 웹에서 접근 가능한 URL로 변환 (항상 슬래시 사용, 선행 슬래시 포함)
-        const urls = files
-          .map((f) => `/${outputDir}/${f}`)
-          .map((u) => u.replace(/\\/g, "/"));          // 윈도우 역슬래시 → 슬래시
-
-        // ✅ CorrelationTool이 생성한 히트맵이 있으면 함께 반환 목록에 포함
-        //    (예: correlation.heatmapPath === "src/outputs/corr_heatmap_123.png")
-        if (correlation?.heatmapPath && fs.existsSync(correlation.heatmapPath)) {
-          const basename = path.basename(correlation.heatmapPath);
-          const webUrl = `/${outputDir}/${basename}`.replace(/\\/g, "/");
-          if (!urls.includes(webUrl)) urls.push(webUrl);
-        }
-
-        resolve({chartPaths:urls});
+        for (const f of files) urls.push(`${webBase}/${f}`.replace(/\\/g, "/"));
+        resolve();
       });
     });
+
+    // (선택) heatmap 포함/복사
+    if (correlation?.heatmapPath && fs.existsSync(correlation.heatmapPath)) {
+      try {
+        const src = path.resolve(correlation.heatmapPath);
+        const base = path.basename(src);
+        const dst = path.join(outputDir, base);
+        if (!fs.existsSync(dst)) {
+          try { fs.copyFileSync(src, dst); }
+          catch {
+            const ext = path.extname(base);
+            const name = path.basename(base, ext);
+            const alt = path.join(outputDir, `${name}_${timestamp}${ext}`);
+            fs.copyFileSync(src, alt);
+            urls.push(`${webBase}/${path.basename(alt)}`.replace(/\\/g, "/"));
+          }
+        }
+        const web = `${webBase}/${path.basename(dst)}`.replace(/\\/g, "/");
+        if (!urls.includes(web)) urls.push(web);
+      } catch { /* 조용히 무시 */ }
+    }
+
+    // ✅ 모든 경로에서 값 반환
+    return { chartPaths: urls };
   }
 }
