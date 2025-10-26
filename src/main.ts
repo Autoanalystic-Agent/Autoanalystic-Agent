@@ -84,7 +84,7 @@ const CHAT_SYSTEM = `
 - CorrelationTool: 상관계수/다중공선성/히트맵
 - VisualizationTool: 단/이변량 시각화
 - PreprocessingTool: 결측/스케일링/인코딩 수행
-- MachineLearningTool: 추천 모델 학습/평가
+- MachineLearningTool: 추천 모델 머신러닝 학습/평가
 
 지침:
 1) 툴이 필요한 질문이면 해당 툴을 호출해 결과를 바탕으로 답하세요.
@@ -92,6 +92,26 @@ const CHAT_SYSTEM = `
 3) 생성된 파일 경로는 백엔드가 UI에 뿌립니다.
 4) 모호하면 간단히 가정하고 진행하세요.
 `;
+
+type Slots = {
+  basic?: any;
+  corr?: any;
+  selector?: any;
+};
+const SESSION_SLOTS = new Map<string, Slots>();
+const getSlots = (k: string) => {
+  if (!SESSION_SLOTS.has(k)) SESSION_SLOTS.set(k, {});
+  return SESSION_SLOTS.get(k)!;
+};
+
+function safeParse<T=any>(v: any): T | undefined {
+  if (v == null) return undefined;
+  if (typeof v === "string") {
+    try { return JSON.parse(v) as T; } catch { return undefined; }
+  }
+  return v as T;
+}
+
 
 // ─────────────────────────────────────────────────────────────
 async function main() {
@@ -216,21 +236,76 @@ async function main() {
     });
 
     agent.on("call", (e) => {
+      const op = e.operation?.name ?? "";
+      const args = (e.arguments ?? {}) as any;
+      const slots = getSlots(sessionKey);
+
+      // VisualizationTool에 selector/corr 자동 주입
+      if (/시각화\s*도구|VisualizationTool/i.test(op)) {
+        if (!args.selectorResult && slots.selector) {
+          const sel = safeParse(slots.selector) ?? slots.selector;
+          if (sel?.selectedColumns && sel?.recommendedPairs) {
+            args.selectorResult = {
+              selectedColumns: sel.selectedColumns,
+              recommendedPairs: sel.recommendedPairs,
+            };
+          }
+        }
+        if (!args.correlation && slots.corr) {
+          const corr = safeParse(slots.corr) ?? slots.corr;
+          if (corr?.heatmapPath || corr?.matrixPath) {
+            args.correlation = {
+              heatmapPath: corr.heatmapPath,
+              matrixPath: corr.matrixPath,
+            };
+          }
+        }
+        e.arguments = args; // 주입 반영
+      }
+
+      // MachineLearningTool에 selector 핵심 필드 자동 주입
+      if (/머신러닝\s*도구|MachineLearningTool/i.test(op)) {
+        if (!args.selectorResult && slots.selector) {
+          const sel = safeParse(slots.selector) ?? slots.selector;
+          args.selectorResult = {
+            targetColumn: sel?.targetColumn ?? null,
+            problemType: sel?.problemType ?? null,
+            mlModelRecommendation: sel?.mlModelRecommendation ?? null,
+          };
+          e.arguments = args;
+        }
+      }
+
       console.log("<<<AGENT_EVENT>>>", JSON.stringify({
         type: "call",
         id: e.id,
-        operation: e.operation?.name,
+        operation: op,
         arguments: e.arguments,
       }));
     });
 
+    // [ADDED] 실행 직후: 툴 결과 저장
     agent.on("execute", (e) => {
+      const op = e.operation?.name ?? "";
+      const value = safeParse(e.value) ?? e.value;
+      const slots = getSlots(sessionKey);
+
+      if (/기초\s*분석\s*도구|BasicAnalysisTool/i.test(op)) {
+        slots.basic = value;
+      }
+      if (/상관|CorrelationTool/i.test(op)) {
+        slots.corr = value;
+      }
+      if (/컬럼\s*선택\s*도구|SelectorTool/i.test(op)) {
+        slots.selector = value;
+      }
+
       console.log("<<<AGENT_EVENT>>>", JSON.stringify({
         type: "execute",
         id: e.id,
-        operation: e.operation?.name,
+        operation: op,
         arguments: e.arguments,
-        value: e.value, // 툴 반환값
+        value: e.value, // 툴 반환값(원본)
       }));
     });
 
