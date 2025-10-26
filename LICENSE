@@ -1,0 +1,46 @@
+MIT License
+
+Copyright (c) 2025 Optimage
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+---------------------------------------------------------------------
+ADDITIONAL NOTICE
+---------------------------------------------------------------------
+
+1. Demonstration Use Only
+This project ("Autoanalystic-Agent") is provided for research, educational,
+and competition demonstration purposes only. It is not intended for
+commercial or production use. The author makes no representations or
+warranties regarding the accuracy or completeness of the software.
+
+2. Third-Party Software Notice
+This project uses the following open-source components:
+- Agentica (MIT License)
+- FastAPI (MIT License)
+- OpenAI SDK (MIT License)
+- Node.js / TypeScript libraries (respective open-source licenses)
+
+Each third-party library retains its own license and terms of use.
+
+3. Scope
+This license applies only to the source code of "Autoanalystic-Agent".
+Any datasets, pretrained models, or API responses used during operation
+may be governed by separate licenses or usage agreements.
