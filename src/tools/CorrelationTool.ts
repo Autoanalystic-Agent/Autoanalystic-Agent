@@ -59,12 +59,22 @@ export class CorrelationTool {
 - data 컬럼 수={{colCount}}, 행 길이 균일성={{isAligned}}
   `.trim();
   
+  
   /**
    * 상관관계 계산 실행 메서드
    */
   public async run(input: CorrelationInput): Promise<CorrelationOutput> {
     const { filePath , data, method = "pearson", dropna = true, threshold = 0.5, sessionId} = input;
     console.log("\n[CorrelationTool] 상관관계 계산 시작");
+
+    let numericData = data;
+    if (!numericData || Object.keys(numericData).length === 0) {
+      numericData = this.buildCorrelationData(filePath);
+    }
+
+    if (!numericData || Object.keys(numericData).length === 0) {
+      throw new Error("유효한 숫자형 데이터가 없습니다.");
+    }
 
     const timestamp = Date.now();
     const outputDir = input.sessionId
@@ -73,14 +83,14 @@ export class CorrelationTool {
     fs.mkdirSync(outputDir, { recursive: true });
 
     // 1️. 입력 데이터 유효성 검사
-    if (!data || Object.keys(data).length === 0)
-      throw new Error("유효한 데이터가 없습니다. (data 필드 확인)");
+    // if (!numericData || Object.keys(data).length === 0)
+    //   throw new Error("유효한 데이터가 없습니다. (data 필드 확인)");
 
     // 2️. 결측치 제거
     //const cleanedData = dropna ? this.cleanData(data) : this.castData(data);
 
     // 3️. 상관관계 행렬 계산
-    const columns = Object.keys(data);
+    const columns = Object.keys(numericData);
     const correlationMatrix: Record<string, Record<string, number>> = {};
 
     for (const col1 of columns) {
@@ -90,7 +100,7 @@ export class CorrelationTool {
           correlationMatrix[col1][col2] = 1;
         } else {
           correlationMatrix[col1][col2] = Number(
-            this.pearson(data[col1], data[col2]).toFixed(3)
+            this.pearson(numericData[col1], numericData[col2]).toFixed(3)
           );        }
       }
     }
@@ -125,6 +135,36 @@ export class CorrelationTool {
     };
   }
 
+  // csv 호출
+  private buildCorrelationData(filePath: string): Record<string, number[]> {
+    const text = fs.readFileSync(filePath, "utf-8");
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    if (lines.length === 0) return {};
+
+    const header = lines[0].split(/,|;|\t/).map(h => h.trim());
+    const colIndex: Record<string, number> = {};
+    header.forEach((h, i) => (colIndex[h] = i));
+
+    const data: Record<string, number[]> = {};
+    for (const h of header) data[h] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cells = lines[i].split(/,|;|\t/);
+      for (const h of header) {
+        const idx = colIndex[h];
+        if (idx == null) continue;
+        const v = cells[idx]?.trim();
+        const num = Number(v);
+        data[h].push(v === "" || v == null || !Number.isFinite(num) ? NaN : num);
+      }
+    }
+
+    // 숫자형 컬럼만 유지
+    for (const k of Object.keys(data)) {
+      if (data[k].every(v => isNaN(v))) delete data[k];
+    }
+    return data;
+  }
   /**
    * 결측치(null, undefined, NaN) 제거
    */
