@@ -25,17 +25,19 @@
 
 
 ## 사용 기술
-언어/런타임: Python(FastAPI), TypeScript(Node.js)
 
-프론트엔드: HTML + Jinja2 템플릿
 
-데이터/시각화: Pandas, Matplotlib, Seaborn
+| 카테고리 | 기술 | 비고 |
+|---|---|---|
+| 언어/런타임 | **Python 3.10~3.12**, **TypeScript**, Node.js 20+ | 파이프라인: Py ↔ TS 병행 |
+| 백엔드(API) | **FastAPI**, **Uvicorn** | REST 라우팅, 템플릿/정적 서빙 |
+| 에이전트/오케스트레이션 | **Agentica** (TS), **child_process** , **ts-node** | TS 에이전트가 파이썬 스크립트 실행 |
+| 데이터/수치 | **Pandas**, **NumPy**, **SciPy** | EDA/전처리/통계 |
+| 시각화 | **Matplotlib**, **Seaborn** | 박스플롯/산점도/기타 차트 |
+| ML | **scikit-learn**, **XGBoost** | 학습/평가(회귀·분류) |
+| 구성/환경 | **dotenv**, requirements.txt, package.json | 설정·의존성 관리 |
+| 개발도구 | **VS Code**, pip / npm, Git | 로컬 개발 표준 도구 |
 
-ML/딥러닝: scikit-learn, XGBoost, TensorFlow/Keras
-
-연동/실행: Node.js child_process 로 파이썬 스크립트 실행, csv-stringify 등
-
-개발도구/운영: VSCode, pip / npm, dotenv, git, Windows 환경
 
 
 ## 모델(에이전트) 설명
