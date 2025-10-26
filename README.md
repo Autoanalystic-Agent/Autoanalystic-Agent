@@ -1,6 +1,10 @@
 # AI 에이전트 기반 데이터 분석 툴
 
-CSV 업로드만으로 기초 통계 → 전처리 → 시각화 → 모델 학습 → 리포트까지 한 번에 수행하는 에이전트 기반 데이터 분석 파이프라인입니다. 프로젝트 저장소와 시연 영상은 아래에서 확인할 수 있습니다.
+데이터 분석의 전 과정을 자동으로 수행하는 **AI 에이전트 기반 데이터 분석 툴**입니다. 
+**Agentica**의 **Function Calling** 기능을 활용하여 다양한 라이브러리를 호출하고, 자연어 명령만으로 데이터를 분석하며 결과를 직관적으로 시각화할 수 있습니다.
+
+**LLM 기반 에이전트 구조**를 통해 사용자의 의도를 이해하고
+적절한 분석 도구를 자동 조합·실행하여, 비전문가도 손쉽게 데이터 인사이트를 도출할 수 있습니다.
 
 - Repo: [github.com/Autoanalystic-Agent/Autoanalystic-Agent](https://github.com/Autoanalystic-Agent/Autoanalystic-Agent)
 - Demo: [youtu.be/AFvnkW1hJkA](https://youtu.be/AFvnkW1hJkA)
@@ -8,14 +12,17 @@ CSV 업로드만으로 기초 통계 → 전처리 → 시각화 → 모델 학�
 본 프로젝트는 “CSV 데이터 분석 파이프라인 자동화 에이전트”를 목표로 하며, 비전문가도 쉽게 분석을 수행하도록 설계되었습니다.
 
 ## 구성 파일
-| 파일/디렉터리                          | 설명                                                                                                 |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `src/outputs/`                   | 모든 산출물의 표준 저장 경로. 차트 이미지, 전처리 CSV, 모델, 리포트 등을 보관합니다.                                               |
-| `src/uploads/`                   | 업로드된 CSV 파일 저장 경로. (FASTAPI 설정)                                                                    |
-| `fastapi_main.py`                | FastAPI 백엔드·템플릿 렌더링·정적 산출물 서빙 구성 및 `/run_workflow`, `/chat` 라우팅. 산출물 URL 매핑 및 단계 카드 렌더링을 포함합니다.    |
-| `scripts/train_ml_model.py`      | 전처리된 CSV로 XGBoost 기반 학습/평가를 수행하고 모델을 저장합니다.                                                        |
-| `scripts/visualize_from_json.py` | Selector 결과(추천 페어)를 입력으로 받아 Boxplot/Scatterplot 등 차트를 생성해 `src/outputs/`에 저장합니다.                   |
-| `templates/`                     | Jinja2 기반 UI(업로드/미리보기/채팅/워크플로 단계 카드).                                                              |
+
+| 경로/파일 | 설명 |
+|---|---|
+| `fastapi_main.py` | FastAPI 백엔드. 업로드/미리보기 템플릿 렌더링, 정적 산출물 서빙, `/chat`, `/run_workflow` 라우팅. |
+| `templates/index.html` | 업로드/미리보기/실행 UI (Jinja2). |
+| `src/main.ts` | Agentica 오케스트레이터 엔트리. 모드 선택(워크플로/채팅) 및 툴 실행 파이프라인. |
+| `src/tools/` | 데이터 분석을 위한 에이전트 **도구 모음** 디렉터리 |
+| `src/scripts/` | 파이썬 **실행 스크립트** 디렉터리. Node(Agentica)에서 `child_process`로 호출하여 시각화/학습 등을 수행합니다. |
+| `src/uploads/` | 업로드된 CSV 저장 경로. |
+| `src/outputs/` | **세션 단위 산출물 표준 경로**: 차트/전처리 CSV/모델/리포트. |
+
 
 ## 사용 기술
 언어/런타임: Python(FastAPI), TypeScript(Node.js)
@@ -35,7 +42,7 @@ ML/딥러닝: scikit-learn, XGBoost, TensorFlow/Keras
 
 아키텍처 개요: LLM이 사용자 의도를 해석해 Basic/Preprocess/Viz/ML 툴을 자동 조합하여 실행하는 에이전트 라우팅 구조입니다. 필요 시 Direct Execute(원클릭)로 전체 파이프라인을 일괄 수행합니다.
 
-주요 기능:
+**주요 기능**: <br>
 ① BasicAnalysisTool(기초 통계)  <br>
 ② CorrelationTool (상관 관계 계산) <br>
 ③ SelectorTool(핵심 컬럼·시각화·전처리·ML 권고) <br>
