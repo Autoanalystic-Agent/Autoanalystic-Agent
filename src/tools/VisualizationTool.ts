@@ -1,5 +1,5 @@
 import { exec } from "child_process";
-import { VisualizationInput } from "./types";
+import { VisualizationInput, VisualizationOutput } from "./types";
 import fs from "fs";
 import path from "path";
 
@@ -39,7 +39,7 @@ export class VisualizationTool {
   `.trim();
 
   // ✅ 시그니처를 공통 타입으로 교체 (기존 로직은 그대로 유지)
-  async run(input: VisualizationInput): Promise<string[]> {
+  async run(input: VisualizationInput): Promise<VisualizationOutput> {
     // ✅ 기존 구조분해 + correlation(선택) 추가
     const { filePath, selectorResult, correlation } = input;
 
@@ -99,7 +99,7 @@ export class VisualizationTool {
           if (!urls.includes(webUrl)) urls.push(webUrl);
         }
 
-        resolve(urls);
+        resolve({chartPaths:urls});
       });
     });
   }

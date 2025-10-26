@@ -204,14 +204,55 @@ async function main() {
     let prompt = `### SYSTEM\n${CHAT_SYSTEM}\n\n### USER\n(아래 요청에 한국어로만 답하세요)\n${userMessage}`;
     if (csvFilePath) prompt += `\n\n### CONTEXT\nCSV_FILE_PATH=${csvFilePath} \n SESSIONID=${sessionId}`;
 
-    const answers = await agent.conversate(prompt);
-    saveHistories(sessionKey, answers);
+    let finalText = "";
 
-    for (const ans of answers) if ("text" in ans && ans.text) {
-      let out = ans.text;
-      if (!isMostlyKorean(out)) out = await forceKoreanOnly(openai, out);
-      console.log(out);
+    // ➊ 중간 과정(선택/호출/실행) 이벤트를 UI로 내보내려면 마커로 찍기
+    agent.on("select", (e) => {
+      console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+        type: "select",
+        operation: e.selection.operation?.name,
+        // e.selection에는 최종 선택만 들어있음. 후보 리스트가 필요하면 executor 커스텀 유지
+      }));
+    });
+
+    agent.on("call", (e) => {
+      console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+        type: "call",
+        id: e.id,
+        operation: e.operation?.name,
+        arguments: e.arguments,
+      }));
+    });
+
+    agent.on("execute", (e) => {
+      console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+        type: "execute",
+        id: e.id,
+        operation: e.operation?.name,
+        arguments: e.arguments,
+        value: e.value, // 툴 반환값
+      }));
+    });
+
+    // ➋ describer 스트림 받아서 텍스트 토큰 합치기 (마크다운 최종 출력용)
+    agent.on("describe", async (e) => {
+      for await (const chunk of e.stream) {
+        finalText += chunk;               // 최종 MD에 합침
+        // 원하면 토큰도 중간중간 뿌릴 수 있음
+        // console.log("<<<AGENT_EVENT>>>", JSON.stringify({ type:"describe:chunk", text: chunk }));
+      }
+    });
+
+    await agent.conversate(prompt);
+
+    // 한국어 보정(옵션)
+    if (!isMostlyKorean(finalText)) {
+      finalText = await forceKoreanOnly(openai, finalText);
     }
+
+    // ✅ 콘솔 출력은 "마크다운 한 덩어리"만
+    console.log(finalText.trim());
+    saveHistories(sessionKey, [{ type: "text", text: finalText }]); 
   }
 
 }
