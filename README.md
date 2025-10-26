@@ -2,9 +2,8 @@
 
 CSV 업로드만으로 기초 통계 → 전처리 → 시각화 → 모델 학습 → 리포트까지 한 번에 수행하는 에이전트 기반 데이터 분석 파이프라인입니다. 프로젝트 저장소와 시연 영상은 아래에서 확인할 수 있습니다.
 
-Repo: github.com/Autoanalystic-Agent/Autoanalystic-Agent
-
-Demo: youtu.be/AFvnkW1hJkA
+- Repo: [github.com/Autoanalystic-Agent/Autoanalystic-Agent](https://github.com/Autoanalystic-Agent/Autoanalystic-Agent)
+- Demo: [youtu.be/AFvnkW1hJkA](https://youtu.be/AFvnkW1hJkA)
 
 본 프로젝트는 “CSV 데이터 분석 파이프라인 자동화 에이전트”를 목표로 하며, 비전문가도 쉽게 분석을 수행하도록 설계되었습니다.
 
@@ -49,18 +48,86 @@ ML/딥러닝: scikit-learn, XGBoost, TensorFlow/Keras
 
 ### 적용 예시 (간단 실행):
 ```
-# 1) 의존성
+
+0) 요구 사항
+
+Python 3.13+ (권장)
+
+Node.js 20+ / npm 10.5+
+
+Git
+
+(선택) VS Code
+
+1) 프로젝트 받기
+git clone <https://github.com/Autoanalystic-Agent/Autoanalystic-Agent.git>
+cd <https://github.com/Autoanalystic-Agent/Autoanalystic-Agent.git>
+
+2) 파이썬 가상환경 (권장)
+
+Windows (PowerShell)
+
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+
+
+macOS / Linux
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+
+
+가상환경은 권장이며, .env 생성 여부와는 무관합니다.
+
+3) 의존성 설치
+# Python
 pip install -r requirements.txt
-# Node v22.14.0 권장, ts-node 사용
-# .env 에 OPENAI_API_KEY를 설정
 
-# 2) 서버 실행
-uvicorn fastapi_main:app --reload
+# Node
+npm install
 
-# 3) 브라우저에서 http://localhost:8000 접속
-# - CSV 업로드 → 상위 5행 미리보기
-# - /chat 로 자연어 요청
-# - /run_workflow 로 원클릭 E2E 실행
+4) 환경변수 파일(.env) 생성
+
+레포에는 보통 .env가 포함되지 않습니다. 프로젝트 루트에 직접 생성하세요.
+
+./.env
+
+# 필수
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+
+# 필요시 추가
+# PORT=8000
+# LOG_LEVEL=info
+# DATABASE_URL=...
+
+
+5) 서버 실행
+uvicorn app.main:app --reload
+# 필요시
+# uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+
+VS Code 사용 시: Ctrl/Cmd + Shift + P → Python: Select Interpreter → .venv 선택 추천.
+
+6) 사용
+- 브라우저: http://localhost:8000
+- /chat : 자연어로 “EDA 해줘 / 이상치 박스플롯” 같은 요청 수행
+- /run_workflow : 업로드→분석→전처리→시각화→학습→리포트 원클릭
+
 ```
-실행/사용 절차 및 환경 요구 사항은 결과보고서의 “실행 및 테스트”를 따릅니다.
+## License
+이 프로젝트는 **MIT Licens**를 따릅니다.
+자세한 내용은 [LICENSE](./LICENSE) 파일을 참고하세요.
+
+> 본 프로젝트는 연구 및 공모전 시연용으로 제공되며,  
+> Agentica, FastAPI, OpenAI SDK 등의 오픈소스 라이브러리를 포함합니다.
+
+
+
+### ⚙️ Third-Party Notice
+- [Agentica](https://github.com/agentica-ai/agentica) (MIT License)  
+- [FastAPI](https://fastapi.tiangolo.com/) (MIT License)  
+- [OpenAI SDK](https://github.com/openai/openai-python) (MIT License)
 
