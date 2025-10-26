@@ -42,7 +42,7 @@ ML/딥러닝: scikit-learn, XGBoost, TensorFlow/Keras
 
 아키텍처 개요: LLM이 사용자 의도를 해석해 Basic/Preprocess/Viz/ML 툴을 자동 조합하여 실행하는 에이전트 라우팅 구조입니다. 필요 시 Direct Execute(원클릭)로 전체 파이프라인을 일괄 수행합니다.
 
-**주요 기능**: <br>
+**주요 기능**: <br/>
 ① BasicAnalysisTool(기초 통계)  <br>
 ② CorrelationTool (상관 관계 계산) <br>
 ③ SelectorTool(핵심 컬럼·시각화·전처리·ML 권고) <br>
