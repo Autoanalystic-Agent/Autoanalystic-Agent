@@ -73,7 +73,7 @@ if not top_pairs:
         np.fill_diagonal(corr_matrix.values, 0) # 자기 자신과의 상관계수 제외
         
         # 상관계수가 높은 상위 3개 페어 추출
-        upper = corr_matrix.where(pd.np.triu(pd.np.ones(corr_matrix.shape), k=1).astype(bool))
+        upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         sorted_corr = upper.stack().sort_values(ascending=False).head(3)
 
         for (col1, col2), corr_value in sorted_corr.items():
