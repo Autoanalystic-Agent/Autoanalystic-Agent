@@ -38,7 +38,7 @@ interface SavedSelectorContext {
 interface SessionContext {
     sessionId: string;
     selectorData: SavedSelectorContext | null; // SelectorTool 결과를 저장할 변수
-    // 기타 세션 정보
+    currentFilePath: string; // [블로킹] 컨텍스트 필드 보장
     [key: string]: any; 
 }
 
@@ -63,6 +63,33 @@ export class AgentController {
         return this.sessionContexts.get(sessionId)!;
     }
 
+    // src/agent/AgentController.ts (클래스 내부)
+    public getSelectorData(sessionId: string) {
+    return this.getContext(sessionId).selectorData;
+    }
+
+    public saveSelectorData(sessionId: string, selectorOutput: SelectorOutput, filePath?: string) {
+        const context = this.getContext(sessionId);
+        const targetColumn = selectorOutput.targetColumn ?? null;
+
+        context.selectorData = {
+            selectedColumns: selectorOutput.selectedColumns,
+            recommendedPairs: selectorOutput.recommendedPairs,
+            targetColumn,
+            problemType: selectorOutput.problemType,
+            mlModelRecommendation: selectorOutput.mlModelRecommendation,
+            filePath: filePath ?? context.currentFilePath,
+            correlationMatrixPath: undefined,
+            correlationHeatmapPath: undefined,
+        };
+
+        console.log("[saveSelectorData] stored:", {
+            target: context.selectorData.targetColumn,
+            type: context.selectorData.problemType,
+            filePath: context.selectorData.filePath,
+        });
+    }
+
     /**
      * "주요 컬럼 추천해줘" 요청 처리 및 결과를 Context에 저장합니다.
      */
@@ -71,16 +98,16 @@ export class AgentController {
 
         const selectorTool = new SelectorTool();
         const selectorOutput = await selectorTool.run(selectorInput);
+        const targetColumn = selectorOutput.targetColumn ?? null;
 
         // 🚨 핵심 로직: SelectorTool의 결과를 Context에 저장 
         context.selectorData = {
             selectedColumns: selectorOutput.selectedColumns,
             recommendedPairs: selectorOutput.recommendedPairs,
-            targetColumn: selectorOutput.targetColumn,
+            targetColumn,
             problemType: selectorOutput.problemType,
             mlModelRecommendation: selectorOutput.mlModelRecommendation,
-            filePath: context.currentFilePath, // 현재 데이터 파일 경로
-            // 상관분석 결과 경로도 SelectorTool Input에 있었다면 여기서 저장할 수 있음
+            filePath: context.currentFilePath,
             correlationMatrixPath: undefined,
         };
 
@@ -140,9 +167,13 @@ public async handleVisualizationRequest(sessionId: string): Promise<string> {
         if (!context.selectorData || !context.selectorData.targetColumn) {
             return "❌ 머신러닝을 위해 먼저 '주요 컬럼 추천해줘'를 실행하여 타겟 컬럼을 준비해야 합니다.";
         }
+        if (!context.selectorData.problemType) {
+            return "❌ 문제 유형(분류/회귀 등)을 확인할 수 없습니다. Selector 결과를 점검해주세요.";
+        }
+
         console.log("--- ML Tool 입력 데이터 확인 ---");
-        console.log("targetColumn for ML:", context.mlPrepData.targetColumn);
-        console.log("problemType for ML:", context.mlPrepData.problemType);
+        console.log("targetColumn for ML:", context.selectorData.targetColumn);
+        console.log("problemType for ML:", context.selectorData.problemType);
         console.log("-------------------------------");
 
         // MachineLearningInput 인터페이스에 맞게 데이터 구성
