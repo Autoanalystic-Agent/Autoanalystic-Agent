@@ -86,6 +86,7 @@ export class AgentController {
         console.log("[saveSelectorData] stored:", {
             target: context.selectorData.targetColumn,
             type: context.selectorData.problemType,
+            mlModelRecommendation: selectorOutput.mlModelRecommendation,
             filePath: context.selectorData.filePath,
         });
     }
@@ -168,6 +169,9 @@ public async handleVisualizationRequest(sessionId: string): Promise<string> {
             return "❌ 머신러닝을 위해 먼저 '주요 컬럼 추천해줘'를 실행하여 타겟 컬럼을 준비해야 합니다.";
         }
         if (!context.selectorData.problemType) {
+            return "❌ 문제 유형(분류/회귀 등)을 확인할 수 없습니다. Selector 결과를 점검해주세요.";
+        }
+        if (!context.selectorData.mlModelRecommendation) {
             return "❌ 문제 유형(분류/회귀 등)을 확인할 수 없습니다. Selector 결과를 점검해주세요.";
         }
 

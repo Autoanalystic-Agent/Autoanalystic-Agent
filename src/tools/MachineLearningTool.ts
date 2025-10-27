@@ -5,9 +5,13 @@ import { MachineLearningInput, MachineLearningOutput } from "./types";
 
 
 export class MachineLearningTool {
-  static readonly description =
-    "SelectorTool 결과를 기반으로 추천된 ML 모델을 학습하고 평가합니다.";
+  name = "머신러닝 예측/학습 도구";
 
+  static readonly description = `
+  이 도구는 머신러닝 및 예측 모델 학습 요청을 처리합니다.
+  사용자가 "머신러닝해줘", "예측 모델 만들어줘", "classification", "regression", "학습", "분류 모델" 등의
+  요청을 하면 반드시 이 도구를 사용해야 합니다.
+  `;
   /**
    * (프롬프트 추가) — 로직/타입/메서드는 변경하지 않음
    * LLM/에이전트가 이 도구의 목적과 입출력, 제약을 이해하도록 돕는 설명 문자열입니다.
@@ -36,20 +40,32 @@ export class MachineLearningTool {
 
 [USER]
 입력 파일: {{filePath}}, target={{targetColumn}}, type={{problemType}}
+  
+[EXAMPLES]
+- "머신러닝해줘" → 데이터를 사용해 모델을 학습해야 한다.
+- "예측 모델 만들어줘" → 적합한 머신러닝 모델을 선택하고 평가 리포트를 생성해야 한다.
+- "분류 모델 학습해줘" → classification 모델로 처리해야 한다.
+- "회귀 모델 만들어줘" → regression 모델로 처리해야 한다.
   `.trim();
 
   async run(input: MachineLearningInput): Promise<string | MachineLearningOutput> {
     const { filePath, selectorResult } = input;
 
     const timestamp = Date.now();
-    const outputDir = input.sessionId
-              ? path.join(process.cwd(), "src/outputs", input.sessionId) // 세션별 출력
+    let sessionId = input.sessionId ?? this.inferSessionIdFromPath(filePath);
+
+    const outputDir = sessionId
+              ? path.join(process.cwd(), "src/outputs", sessionId) // 세션별 출력
               : path.join(process.cwd(), "src/outputs");
     fs.mkdirSync(outputDir, { recursive: true });
 
+    const selectorJsonEscaped = JSON.stringify(selectorResult)
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"');
+
     // 2. Python 실행 커맨드 구성
     const pythonScriptPath = "src/scripts/train_ml_model.py";
-    const selectorJsonEscaped = JSON.stringify(selectorResult).replace(/"/g, '\\"');
+    //const selectorJsonEscaped = JSON.stringify(selectorResult).replace(/"/g, '\\"');
     const command = `python ${pythonScriptPath} "${filePath}" "${selectorJsonEscaped}" "${outputDir}" ${timestamp}`;
 
     return new Promise((resolve, reject) => {
@@ -87,5 +103,15 @@ export class MachineLearningTool {
         resolve(out);        
       });
     });
+  }
+  private inferSessionIdFromPath(filePath: string): string | undefined {
+    // .../uploads/<sessionId>/<file>.csv 형태를 가정
+    // 부모 디렉터리 이름을 후보로 사용
+    try {
+      const parent = path.basename(path.dirname(filePath));
+      // UUID-like or sufficiently unique directory name만 세션으로 인정
+      if (/^[0-9a-fA-F-]{8,}$/.test(parent)) return parent;
+    } catch {}
+    return undefined;
   }
 }

@@ -139,10 +139,10 @@ async function main() {
     vendor: { model: "gpt-4.1-mini", api: openai },
     controllers: [
       {
-        name: "기초 분석 도구",
+        name: "머신러닝 도구",
         protocol: "class",
-        application: typia.llm.application<BasicAnalysisTool, "chatgpt">(),
-        execute: new BasicAnalysisTool(),
+        application: typia.llm.application<MachineLearningTool, "chatgpt">(),
+        execute: new MachineLearningTool(),
       },
       {
         name: "컬럼 선택 도구",
@@ -163,18 +163,17 @@ async function main() {
         execute: new VisualizationTool(),
       },
       {
-        name: "머신러닝 도구",
-        protocol: "class",
-        application: typia.llm.application<MachineLearningTool, "chatgpt">(),
-        execute: new MachineLearningTool(),
-      },
-      {
         name: "상관관계 도구",
         protocol: "class",
         application: typia.llm.application<CorrelationTool, "chatgpt">(),
         execute: new CorrelationTool(),
+      },
+      {
+        name: "기초 분석 도구",
+        protocol: "class",
+        application: typia.llm.application<BasicAnalysisTool, "chatgpt">(),
+        execute: new BasicAnalysisTool(),
       },                
-      // CorrelationTool 사용 시 controllers에 추가
     ],
     histories,
   });
