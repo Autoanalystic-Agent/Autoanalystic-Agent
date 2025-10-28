@@ -168,13 +168,18 @@
   <!-- 중앙: 채팅 -->
   <section class="center">
     <h1>💬 Chat</h1>
-    <div class="chat-list">
+
+    <div class="chat-list" id="chatList">
       {% if chat_history %}
         {% for chat in chat_history %}
           {% if chat.role == "user" %}
             <div class="bubble me">{{ chat.content }}</div>
           {% else %}
-            <div class="bubble bot">{{ chat.content }}</div>
+            <!-- [MODIFIED] 봇 메시지를 Markdown 렌더링 대상으로 변경 -->
+            <div class="bubble bot">
+              <div class="md-raw" style="display:none;">{{ chat.content | e }}</div>
+              <div class="md-rendered">로딩 중...</div>
+            </div>
           {% endif %}
         {% endfor %}
       {% elif reply %}
@@ -183,12 +188,14 @@
         <div class="muted">메시지를 입력해 대화를 시작하세요.</div>
       {% endif %}
     </div>
+
     <div style="height:10px"></div>
     <form class="row" action="/chat/" method="post">
       <input type="text" name="message" placeholder="메시지 입력" required />
       <input type="hidden" name="sessionId" value="{{ current_session or '' }}">
       <button type="submit">전송</button>
     </form>
+
     <!-- [ADD] 워크플로 단계별 결과 타임라인 -->
     {% if workflow and steps %}
       <div class="card">
@@ -406,6 +413,27 @@
 </script>
 <!-- ===== [NEW] 끝 ===== -->
 </body>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const nodes = document.querySelectorAll(".bot .md-raw");
+    console.log("렌더링 대상:", nodes.length);
+    nodes.forEach(rawNode => {
+      const rawText = rawNode.textContent || "";
+      if (!rawText.trim()) return;
+      const html = marked.parse(rawText);
+      const safe = DOMPurify.sanitize(html, {USE_PROFILES:{html:true}});
+      const rendered = rawNode.parentElement.querySelector(".md-rendered");
+      if (rendered) rendered.innerHTML = safe;
+      rawNode.remove();
+    });
+
+    // 자동 스크롤
+    const chatList = document.getElementById("chatList");
+    if (chatList) setTimeout(() => chatList.scrollTop = chatList.scrollHeight, 300);
+  });
+</script>
 <script>
   document.addEventListener("DOMContentLoaded", function() {
     const chatList = document.querySelector(".chat-list");
