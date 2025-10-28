@@ -1,5 +1,17 @@
 .env
+# Virtual env
+.venv/
+venv*/
+env*/
 venv13/
+venv13/
+# Node
 node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyo
+# Project outputs
 src/uploads/
 src/outputs/
