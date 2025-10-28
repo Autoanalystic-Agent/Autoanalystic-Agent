@@ -199,8 +199,8 @@ def map_artifacts(workflow: dict, sessionId: str) -> dict:
         mlp["mlResultUrl"] = path_to_outputs_url(mlp["mlResultPath"], sessionId)
     if isinstance(mlp.get("reportPath"), str):
         mlp["reportUrl"] = path_to_outputs_url(mlp["reportPath"], sessionId)
-        # 보고서 본문이 '�' 등 깨져있다면 UTF-8 재로드 시도
-        if mlp.get("report") and "�" in mlp["report"]:
+        # 보고서 본문이 ' ' 등 깨져있다면 UTF-8 재로드 시도
+        if mlp.get("report") and " " in mlp["report"]:
             try:
                 mlp["report"] = Path(mlp["reportPath"]).read_text(encoding="utf-8", errors="ignore")
             except Exception:
@@ -595,9 +595,11 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
             "corr": {"headers": [], "rows": []},
+            "chat_history": chat_history,
         })
     file_path = Path(session_files[sessionId])
     filename = file_path.name
+    chat_history = chat_histories.get(sessionId, [])
     print(file_path, filename)
 
     if not file_path.exists():
@@ -609,6 +611,7 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
             "corr": {"headers": [], "rows": []},
+            "chat_history": chat_history,
         })
 
     # 워크플로우 실행
@@ -625,6 +628,7 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
                 "generated_files": generated_files, "preview_images": preview_images, "workflow": None, "steps": [],
                 "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr,
                 "corr": {"headers": [], "rows": []},
+                "chat_history": chat_history,
             })
 
         # JSON 파싱 → 카드 데이터 구성
@@ -685,6 +689,7 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "generated_files": generated_files, "preview_images": preview_images,
             "workflow": workflow_mapped, "steps": steps,
             "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr, "corr": corr,
+            "chat_history": chat_history,
         })
 
     except subprocess.TimeoutExpired:
@@ -697,12 +702,15 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "workflow": None, "steps": [], "head_columns": hc, "head_rows": hr,
             "describe_columns": dc, "describe_rows": dr,
             "corr": {"headers": [], "rows": []},
+            "chat_history": chat_history,
         })
 # ------------------------------
 # 채팅
 # ------------------------------
 @app.post("/chat/", response_class=HTMLResponse)
 async def chat(request: Request, message: str = Form(...), sessionId: str = Form(None), filename: str = Form(None)):
+    form = await request.form()
+    print("[/chat] form received:", dict(form))  # ← 콘솔에 찍힘
     if sessionId not in session_files:
         reply = "⚠️ 파일이 유효하지 않습니다. CSV를 먼저 업로드해주세요."
         return templates.TemplateResponse("index.html", {"request": request, "reply": reply})
@@ -711,7 +719,7 @@ async def chat(request: Request, message: str = Form(...), sessionId: str = Form
     filename = file_path.name
     chat_history = chat_histories.get(sessionId, [])
     chat_history.append({"role": "user", "content": message})
-
+    before_time = time.time()
     try:
         cmd = [NPX, "ts-node", "src/main.ts", "--mode=chat", message, str(file_path), sessionId]
         proc = subprocess.Popen(
@@ -739,16 +747,29 @@ async def chat(request: Request, message: str = Form(...), sessionId: str = Form
 
         # ✅ 이미지/파일 링크 추가
         generated_files = list_generated_files(sessionId)
+        new_files = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".csv", ".json", ".txt", ".html", ".md"}
+                    and Path(OUTPUT_DIR / sessionId / f["name"]).stat().st_mtime > before_time]
         preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
-        other_files = [f for f in generated_files if f["ext"] in {".csv", ".json", ".txt", ".html", ".md"}]
-        if preview_images or other_files:
-            md_output += "\n\n### 📂 시각화/결과 파일\n"
-            for img in preview_images:
-                rel = f"/outputs/{sessionId}/{img['name']}"
-                md_output += f'<a href="{rel}" target="_blank"><img src="{rel}" alt="{img["name"]}" style="max-width:100%;height:auto;border-radius:8px;"/></a>\n'
-            for f in other_files:
+        if new_files:
+            md_output += "\n\n### 📂 새로 생성된 파일\n"
+            for f in new_files:
                 rel = f"/outputs/{sessionId}/{f['name']}"
-                md_output += f"- [{f['name']}]({rel})\n"
+                if f["ext"] in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+                    md_output += f'<a href="{rel}" target="_blank"><img src="{rel}" style="max-width:220px;height:auto;border-radius:8px;margin:6px;"></a>\n'
+                else:
+                    md_output += f"- [{f['name']}]({rel})\n"
+
+        # generated_files = list_generated_files(sessionId)
+        # preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
+        # other_files = [f for f in generated_files if f["ext"] in {".csv", ".json", ".txt", ".html", ".md"}]
+        # if preview_images or other_files:
+        #     md_output += "\n\n### 📂 시각화/결과 파일\n"
+        #     for img in preview_images:
+        #         rel = f"/outputs/{sessionId}/{img['name']}"
+        #         md_output += f'<a href="{rel}" target="_blank"><img src="{rel}" alt="{img["name"]}" style="max-width:100%;height:auto;border-radius:8px;"/></a>\n'
+        #     for f in other_files:
+        #         rel = f"/outputs/{sessionId}/{f['name']}"
+        #         md_output += f"- [{f['name']}]({rel})\n"
 
         chat_history.append({"role": "bot", "content": md_output})
         chat_histories[sessionId] = chat_history

@@ -133,13 +133,13 @@ hint.targetColumn={{hint.targetColumn}}, hint.problemType={{hint.problemType}}
       : null;
 
     //  로그 확인
-    console.log(`\n [SelectorTool 결과]:`);
-    console.log("- 선택된 컬럼:", selectedColumns);
-    console.log("- 추천된 페어:", recommendedPairs);
-    console.log("- 전처리 추천:", preprocessingRecommendations);
-    console.log("- 타겟 컬럼:", targetColumn);
-    console.log("- 문제 유형:", inferredProblemType);
-    console.log("- 모델 추천:", mlModelRecommendation);
+    // console.log(`\n [SelectorTool 결과]:`);
+    // console.log("- 선택된 컬럼:", selectedColumns);
+    // console.log("- 추천된 페어:", recommendedPairs);
+    // console.log("- 전처리 추천:", preprocessingRecommendations);
+    // console.log("- 타겟 컬럼:", targetColumn);
+    // console.log("- 문제 유형:", inferredProblemType);
+    // console.log("- 모델 추천:", mlModelRecommendation);
 
     return {
       selectedColumns,

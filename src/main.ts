@@ -139,11 +139,11 @@ async function main() {
     vendor: { model: "gpt-4.1-mini", api: openai },
     controllers: [
       {
-        name: "머신러닝 도구",
+        name: "기초 분석 도구",
         protocol: "class",
-        application: typia.llm.application<MachineLearningTool, "chatgpt">(),
-        execute: new MachineLearningTool(),
-      },
+        application: typia.llm.application<BasicAnalysisTool, "chatgpt">(),
+        execute: new BasicAnalysisTool(),
+      },        
       {
         name: "컬럼 선택 도구",
         protocol: "class",
@@ -163,17 +163,17 @@ async function main() {
         execute: new VisualizationTool(),
       },
       {
+        name: "머신러닝 도구",
+        protocol: "class",
+        application: typia.llm.application<MachineLearningTool, "chatgpt">(),
+        execute: new MachineLearningTool(),
+      },
+      {
         name: "상관관계 도구",
         protocol: "class",
         application: typia.llm.application<CorrelationTool, "chatgpt">(),
         execute: new CorrelationTool(),
-      },
-      {
-        name: "기초 분석 도구",
-        protocol: "class",
-        application: typia.llm.application<BasicAnalysisTool, "chatgpt">(),
-        execute: new BasicAnalysisTool(),
-      },                
+      },        
     ],
     histories,
   });
@@ -254,11 +254,11 @@ async function main() {
 
     // ➊ 중간 과정(선택/호출/실행) 이벤트를 UI로 내보내려면 마커로 찍기
     agent.on("select", (e) => {
-      console.log("<<<AGENT_EVENT>>>", JSON.stringify({
-        type: "select",
-        operation: e.selection.operation?.name,
-        // e.selection에는 최종 선택만 들어있음. 후보 리스트가 필요하면 executor 커스텀 유지
-      }));
+      // console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+      //   type: "select",
+      //   operation: e.selection.operation?.name,
+      //   // e.selection에는 최종 선택만 들어있음. 후보 리스트가 필요하면 executor 커스텀 유지
+      // }));
     });
 
     agent.on("call", (e) => {
@@ -338,12 +338,12 @@ async function main() {
 
 
 
-      console.log("<<<AGENT_EVENT>>>", JSON.stringify({
-        type: "call",
-        id: e.id,
-        operation: op,
-        arguments: e.arguments,
-      }));
+      // console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+      //   type: "call",
+      //   id: e.id,
+      //   operation: op,
+      //   arguments: e.arguments,
+      // }));
     });
 
     // [ADDED] 실행 직후: 툴 결과 저장
@@ -358,12 +358,12 @@ async function main() {
       if (isSelectorExec && value?.selectedColumns && value?.recommendedPairs) {
         slots.selector = value;
         controller.saveSelectorData(sessionId, value, csvFilePath);
-        console.log("<<<AGENT_EVENT>>>", JSON.stringify({
-          type: "saved_selector",
-          sessionId,
-          target: value?.targetColumn,
-          problemType: value?.problemType
-        }));
+        // console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+        //   type: "saved_selector",
+        //   sessionId,
+        //   target: value?.targetColumn,
+        //   problemType: value?.problemType
+        // }));
       }
 
       if (/기초\s*분석\s*도구|BasicAnalysisTool/i.test(op)) {
@@ -376,13 +376,13 @@ async function main() {
         slots.selector = value;
       }
 
-      console.log("<<<AGENT_EVENT>>>", JSON.stringify({
-        type: "execute",
-        id: e.id,
-        operation: op,
-        arguments: e.arguments,
-        value: e.value, // 툴 반환값(원본)
-      }));
+      // console.log("<<<AGENT_EVENT>>>", JSON.stringify({
+      //   type: "execute",
+      //   id: e.id,
+      //   operation: op,
+      //   arguments: e.arguments,
+      //   value: e.value, // 툴 반환값(원본)
+      // }));
     });
 
     // ➋ describer 스트림 받아서 텍스트 토큰 합치기 (마크다운 최종 출력용)
