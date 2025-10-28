@@ -44,7 +44,7 @@ export class VisualizationTool {
     const { filePath, selectorResult, correlation } = input;
 
     const sessionId = input.sessionId ?? "";
-    console.log(input.sessionId)
+    //console.log(input.sessionId)
     // 1. 출력 폴더 생성
     const outputDir = sessionId
           ? path.join(process.cwd(), "src/outputs", sessionId) // 세션별 출력

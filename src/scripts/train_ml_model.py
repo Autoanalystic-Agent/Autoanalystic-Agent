@@ -18,11 +18,26 @@ df = pd.read_csv(file_path)
 
 target = selector_result.get("targetColumn")
 problem_type = selector_result.get("problemType")
-model_name = selector_result["mlModelRecommendation"]["model"]
-params = selector_result["mlModelRecommendation"]["params"]
+rec = selector_result.get("mlModelRecommendation") or {}          # [MINIMAL]
+model_name = rec.get("model")                                     # [MINIMAL]
+params = rec.get("params") or {}                                  # [MINIMAL]
+if model_name is None:                                            # [MINIMAL]
+    # problem_type에 따라 기본값 지정
+    if problem_type == "regression":
+        model_name = "RandomForestRegressor"
+    else:
+        # 분류 또는 미지정(None)일 때 분류로 폴백
+        model_name = "RandomForestClassifier"
 
 # one-hot 전처리된 컬럼 이름들 확인
 target_cols = [c for c in df.columns if target in c]  # 'Embarked' → ['Embarked_C', 'Embarked_Q', 'Embarked_S']
+
+if not target_cols:
+    if target in df.columns:
+        target_cols = [target]
+    else:
+        raise ValueError(f"타깃 컬럼({target})을(를) 찾을 수 없습니다.")  # [MINIMAL]
+# ---------------------------------------------------------
 
 
 X_drop = df.drop(labels=target_cols, axis=1)
@@ -78,6 +93,8 @@ else:
     y_pred = model.predict(X_test)
     acc = accuracy_score(y_test, y_pred)
     result_text = f"모델: {model_name}\n정확도: {acc:.4f}\n"
+
+os.makedirs(output_dir, exist_ok=True)
 
 
 result_path = os.path.join(output_dir, f"ml_result_{timestamp}.txt")

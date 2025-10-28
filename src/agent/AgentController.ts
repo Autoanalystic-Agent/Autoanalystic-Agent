@@ -83,11 +83,11 @@ export class AgentController {
             correlationHeatmapPath: undefined,
         };
 
-        console.log("[saveSelectorData] stored:", {
-            target: context.selectorData.targetColumn,
-            type: context.selectorData.problemType,
-            filePath: context.selectorData.filePath,
-        });
+        // console.log("[saveSelectorData] stored:", {
+        //     target: context.selectorData.targetColumn,
+        //     type: context.selectorData.problemType,
+        //     filePath: context.selectorData.filePath,
+        // });
     }
 
     /**

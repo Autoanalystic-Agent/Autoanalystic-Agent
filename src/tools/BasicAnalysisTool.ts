@@ -112,7 +112,7 @@ export class BasicAnalysisTool {
         columnStats.push(item);
       }
 
-      console.log(" BasicAnalysisTool 결과:", columnStats);
+      //console.log(" BasicAnalysisTool 결과:", columnStats);
       return { columnStats };
     } catch (err) {
       throw new Error(`파일 분석 중 오류 발생: ${(err as Error).message}`);

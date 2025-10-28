@@ -105,10 +105,74 @@
     #corr-table thead th { background:#0f1320; text-align:left; }                                                       /* [NEW] */
     #corr-table th:first-child, #corr-table td:first-child { text-align:left; }       
     /* ===== [ADD] 끝 ===== */
+    /* ── Markdown 렌더링 영역 전용 ───────────────────────────── */
+    /* 표 전용 가로 스크롤 랩퍼 */
+    .md-scroll-x{
+      width:100%;
+      overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      margin:8px 0;
+      padding-bottom:2px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:#121621;
+    }
+
+    /* 마크다운 표 공통 룰(채팅 영역 안에서만 적용) — 기존 그대로 유지해도 OK */
+    .chat-list .md-rendered table{
+      border-collapse:collapse;
+      width:max-content;    /* 내용만큼 넓어지기 */
+      min-width:100%;       /* 최소한 컨테이너 채우기 */
+      background:#121621;
+      border:1px solid var(--line);
+    }
+    .chat-list .md-rendered th,
+    .chat-list .md-rendered td{
+      padding:8px 10px;
+      border-bottom:1px solid var(--line);
+      white-space:nowrap;
+    }
+    .chat-list .md-rendered thead th{
+      background:#0f1320; text-align:left;
+    }
+    /* 타자 중(typing) 버블 */
+    .typing {
+      align-self:flex-start; background:#1e2433;
+      padding:10px 12px; border-radius:12px; display:inline-flex; gap:6px;
+    }
+    .typing .dot {
+      width:6px; height:6px; border-radius:50%; background:#c8ccd4;
+      animation: blink 1.2s infinite ease-in-out;
+    }
+    .typing .dot:nth-child(2){ animation-delay:0.15s; }
+    .typing .dot:nth-child(3){ animation-delay:0.3s; }
+
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+      40% { opacity: 1; transform: translateY(-2px); }
+    }
+
+    /* 입력/버튼 비활성화 시 표시 */
+    input[disabled], button[disabled]{
+      filter: grayscale(1) opacity(0.6);
+      cursor: not-allowed;
+    }
+
+
   </style>
 </head>
 <body>
-<header>CSV 요약 챗봇</header>
+<header>CSV 요약 챗봇
+  <button id="toggle-right-panel" style="
+    margin-left:auto;
+    background:none;
+    border:none;
+    color:#aee4b7;
+    font-size:1rem;
+    cursor:pointer;
+    font-weight:600;
+  ">📁 파일 숨기기</button>
+</header>
 
 <main class="layout">
   <!-- 왼쪽: 업로드 + 미리보기 -->
@@ -168,13 +232,18 @@
   <!-- 중앙: 채팅 -->
   <section class="center">
     <h1>💬 Chat</h1>
-    <div class="chat-list">
+
+    <div class="chat-list" id="chatList">
       {% if chat_history %}
         {% for chat in chat_history %}
           {% if chat.role == "user" %}
             <div class="bubble me">{{ chat.content }}</div>
           {% else %}
-            <div class="bubble bot">{{ chat.content }}</div>
+            <!-- [MODIFIED] 봇 메시지를 Markdown 렌더링 대상으로 변경 -->
+            <div class="bubble bot">
+              <div class="md-raw" style="display:none;">{{ chat.content | e }}</div>
+              <div class="md-rendered">로딩 중...</div>
+            </div>
           {% endif %}
         {% endfor %}
       {% elif reply %}
@@ -183,12 +252,14 @@
         <div class="muted">메시지를 입력해 대화를 시작하세요.</div>
       {% endif %}
     </div>
+
     <div style="height:10px"></div>
-    <form class="row" action="/chat/" method="post">
+    <form id="chatForm" class="row" action="/chat/" method="post">
       <input type="text" name="message" placeholder="메시지 입력" required />
       <input type="hidden" name="sessionId" value="{{ current_session or '' }}">
       <button type="submit">전송</button>
     </form>
+
     <!-- [ADD] 워크플로 단계별 결과 타임라인 -->
     {% if workflow and steps %}
       <div class="card">
@@ -351,17 +422,6 @@
         </div>
       </div>
     {% endif %}
-    {% if preview_images %}
-      <h2>📊 분석 결과</h2>
-      {% for img in preview_images %}
-        <div style="margin:12px 0">
-          <img src="{{ img.url }}" class="file-thumb" alt="{{ img.name }}">
-          <div class="file-actions">
-            <a class="button" href="{{ img.url }}" download>이미지 다운로드</a>
-          </div>
-        </div>
-      {% endfor %}
-    {% endif %}
   </section>
 
   <!-- 오른쪽: 생성된 파일 다운로드 -->
@@ -405,7 +465,39 @@
   })();
 </script>
 <!-- ===== [NEW] 끝 ===== -->
-</body>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const nodes = document.querySelectorAll(".bot .md-raw");
+    console.log("렌더링 대상:", nodes.length);
+    nodes.forEach(rawNode => {
+      const rawText = rawNode.textContent || "";
+      if (!rawText.trim()) return;
+      const html = marked.parse(rawText);
+      const safe = DOMPurify.sanitize(html, {USE_PROFILES:{html:true}});
+      const rendered = rawNode.parentElement.querySelector(".md-rendered");
+      if (rendered) rendered.innerHTML = safe;
+      rawNode.remove();
+    });
+
+    // 렌더된 마크다운 안의 <table>을 가로 스크롤 랩퍼로 감싸기
+    document.querySelectorAll(".bot .md-rendered").forEach(rendered => {
+      rendered.querySelectorAll("table").forEach(tbl => {
+        if (!tbl.parentElement.classList.contains("md-scroll-x")) {
+          const wrap = document.createElement("div");
+          wrap.className = "md-scroll-x";
+          tbl.parentNode.insertBefore(wrap, tbl);
+          wrap.appendChild(tbl);
+        }
+      });
+    });
+
+    // 자동 스크롤
+    const chatList = document.getElementById("chatList");
+    if (chatList) setTimeout(() => chatList.scrollTop = chatList.scrollHeight, 300);
+  });
+</script>
 <script>
   document.addEventListener("DOMContentLoaded", function() {
     const chatList = document.querySelector(".chat-list");
@@ -421,4 +513,173 @@
     }
   });
 </script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  const toggleBtn = document.getElementById("toggle-right-panel");
+  const rightPanel = document.querySelector(".panel.right");
+  const layout = document.querySelector(".layout");
+
+  let isHidden = false;
+
+  toggleBtn.addEventListener("click", () => {
+    isHidden = !isHidden;
+
+    if (isHidden) {
+      rightPanel.style.display = "none";
+      layout.style.gridTemplateColumns = "40% 60%"; // 오른쪽 패널 숨김 → 중앙 확장
+      toggleBtn.textContent = "📁 파일 보기";
+    } else {
+      rightPanel.style.display = "block";
+      layout.style.gridTemplateColumns = "35% 45% 20%"; // 원래 비율 복원
+      toggleBtn.textContent = "📁 파일 숨기기";
+    }
+  });
+});
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const chatForm   = document.getElementById("chatForm");              
+  const chatInput  = chatForm?.querySelector('input[name="message"]');
+  const chatSendBtn= chatForm?.querySelector('button[type="submit"]');
+  const chatList   = document.getElementById("chatList");
+  let pending = false;
+
+  // 마크다운 렌더 + 표 가로 스크롤 래핑
+  function renderMarkdownInBubbles(root) {
+    const nodes = root.querySelectorAll(".bot .md-raw");
+    nodes.forEach(rawNode => {
+      const rawText = rawNode.textContent || "";
+      if (!rawText.trim()) return;
+      const html = marked.parse(rawText);
+      const safe = DOMPurify.sanitize(html, {USE_PROFILES:{html:true}});
+      const rendered = rawNode.parentElement.querySelector(".md-rendered");
+      if (rendered) rendered.innerHTML = safe;
+      rawNode.remove();
+    });
+    root.querySelectorAll(".bot .md-rendered").forEach(rendered => {
+      rendered.querySelectorAll("table").forEach(tbl => {
+        if (!tbl.parentElement.classList.contains("md-scroll-x")) {
+          const wrap = document.createElement("div");
+          wrap.className = "md-scroll-x";
+          tbl.parentNode.insertBefore(wrap, tbl);
+          wrap.appendChild(tbl);
+        }
+      });
+    });
+  }
+
+  function addTypingBubble() {
+    const chatList = document.getElementById("chatList");
+    if (!chatList) return;
+
+    // 이미 표시 중이면 새로 만들지 않음(중복 방지)
+    const already = chatList.querySelector('.bubble.bot.typing[data-typing="true"]');
+    if (already) return;
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble bot typing";         // ← .bot .typing 둘 다!
+    bubble.dataset.typing = "true";
+    bubble.setAttribute("aria-live", "polite");
+    bubble.setAttribute("aria-label", "답변 작성 중");
+
+    // 점(…) 애니메이션 3개
+    bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+
+    chatList.appendChild(bubble);
+    chatList.scrollTop = chatList.scrollHeight;
+  }
+
+  function removeTypingBubble() {
+    const chatList = document.getElementById("chatList");
+    if (!chatList) return;
+
+    const typing = chatList.querySelector('.bubble.bot.typing[data-typing="true"]');
+    if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
+  }
+
+  if (chatForm && chatInput && chatSendBtn && chatList) {
+    chatForm.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (pending) return;
+      pending = true;
+
+      // ⭐ FormData를 먼저 만든다 (disabled 전에!)
+      const fd = new FormData(chatForm);
+      const userMsg = chatInput.value;
+
+      // 입력/버튼 잠금
+      const prevPlaceholder = chatInput.placeholder;
+      const prevBtnText = chatSendBtn.textContent;
+      chatInput.disabled = true;
+      chatSendBtn.disabled = true;
+      chatInput.placeholder = "응답 작성 중…";
+      chatSendBtn.textContent = "응답 중…";
+
+      // 내 메시지 즉시 표시(옵션)
+      if (userMsg.trim()) {
+        const me = document.createElement("div");
+        me.className = "bubble me";
+        me.textContent = userMsg;
+        chatList.appendChild(me);
+      }
+
+      // 타자(…) 표시
+      addTypingBubble();
+
+      try {
+        const res = await fetch(chatForm.action, { method: "POST", body: fd });
+        const html = await res.text();
+
+        // 응답에서 #chatList만 교체
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const newChatList = doc.querySelector("#chatList");
+
+        removeTypingBubble();
+
+        if (newChatList) {
+          chatList.replaceChildren(...newChatList.childNodes);
+          renderMarkdownInBubbles(chatList);
+          chatList.scrollTop = chatList.scrollHeight;
+        }
+
+        // (선택) 오른쪽 패널 동기 갱신
+        const newRight = doc.querySelector(".panel.right");
+        const curRight = document.querySelector(".panel.right");
+        if (newRight && curRight) curRight.innerHTML = newRight.innerHTML;
+
+      } catch (err) {
+        console.error(err);
+        removeTypingBubble();
+        const errBubble = document.createElement("div");
+        errBubble.className = "bubble bot";
+        errBubble.textContent = "⚠️ 전송 중 오류가 발생했어요. 다시 시도해주세요.";
+        chatList.appendChild(errBubble);
+      } finally {
+        chatInput.value = "";
+        chatInput.disabled = false;
+        chatSendBtn.disabled = false;
+        chatInput.placeholder = prevPlaceholder;
+        chatSendBtn.textContent = prevBtnText;
+        chatInput.focus();
+        pending = false;
+      }
+    });
+  }
+
+  // (선택) 워크플로우 버튼 잠금 표시
+  const wfForm = document.querySelector('form[action="/run_workflow/"]');
+  if (wfForm) {
+    const wfBtn = wfForm.querySelector('button[type="submit"]');
+    wfForm.addEventListener("submit", () => {
+      if (!wfBtn) return;
+      wfBtn.disabled = true;
+      wfBtn.dataset.old = wfBtn.textContent;
+      wfBtn.textContent = "실행 중…";
+    });
+  }
+});
+</script>
+
+</body>
 </html>

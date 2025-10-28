@@ -47,7 +47,7 @@ def run_ts_workflow(file_path: Path, sessionId:str, message: str = "분석해줘
         stdout, stderr = proc.communicate(timeout=600)
         return proc.returncode, stdout, stderr
     except FileNotFoundError:
-        cmd_str = f'{NPX} ts-node src/main.ts --mode=workflow {shlex.quote(message)} {shlex.quote(str(file_path))} {shlex.quote(filename)}'
+        cmd_str = f'{NPX} ts-node src/main.ts --mode=workflow {shlex.quote(message)} {shlex.quote(str(file_path))}'
         proc = subprocess.Popen(
             cmd_str,
             stdout=subprocess.PIPE,
@@ -61,6 +61,96 @@ def run_ts_workflow(file_path: Path, sessionId:str, message: str = "분석해줘
         )
         stdout, stderr = proc.communicate(timeout=600)
         return proc.returncode, stdout, stderr
+
+
+def extract_json_and_text(output_str: str):
+    """
+    LLM 출력에서 JSON과 자연어 설명을 분리.
+    예: "설명문 ... {json...}" → ("설명문", {...})
+    """
+    json_part = None
+    text_part = output_str
+    m = re.search(r"(\{[\s\S]*\})", output_str)
+    if m:
+        try:
+            json_part = json.loads(m.group(1))
+            text_part = output_str[:m.start()] + output_str[m.end():]
+        except Exception:
+            pass
+    return text_part.strip(), json_part
+
+
+def format_tool_output(parsed_json, sessionId):
+    """LLM 또는 Tool JSON을 Markdown 텍스트로 변환 (Tool별 섹션 스타일)"""
+    emoji_map = {
+        "BasicAnalysisTool": "🧮",
+        "CorrelationTool": "📊",
+        "SelectorTool": "🧩",
+        "PreprocessingTool": "🧼",
+        "VisualizationTool": "📈",
+        "MachineLearningTool": "🤖",
+        "WorkflowTool": "⚙️",
+    }
+
+    md = ""
+    if "answers" in parsed_json:
+        for ans in parsed_json["answers"]:
+            tool = ans.get("tool", "")
+            summary = ans.get("summary", "")
+            args = ans.get("arguments", {})
+            icon = emoji_map.get(tool, "🔹")
+
+            md += f"### {icon} {tool}\n"
+            if summary:
+                md += f"- **요약:** {summary}\n\n"
+
+            if "columnStats" in args:
+                md += "| 컬럼 | 타입 | 결측치 | 고유값 |\n|------|------|--------|--------|\n"
+                for c in args["columnStats"]:
+                    md += f"| {c.get('column','-')} | {c.get('dtype','-')} | {c.get('missing',0)} | {c.get('unique','-')} |\n"
+                md += "\n"
+
+            if "selectedColumns" in args:
+                cols = ", ".join(args["selectedColumns"]) or "—"
+                md += f"**선택된 컬럼:** {cols}\n\n"
+
+            if "recommendedPairs" in args:
+                pairs = args["recommendedPairs"]
+                if pairs:
+                    md += "**추천 페어:**\n"
+                    for p in pairs:
+                        md += f"- {p['column1']} × {p['column2']}\n"
+                    md += "\n"
+
+            if "mlModelRecommendation" in args:
+                rec = args["mlModelRecommendation"]
+                if rec:
+                    md += f"**추천 모델:** {rec.get('model','—')}  \n"
+                    if rec.get("score") is not None:
+                        md += f"**정확도:** {rec['score']*100:.1f}%  \n"
+                    if rec.get("reason"):
+                        md += f"🧠 {rec['reason']}\n\n"
+
+            if "comment" in args or "description" in args:
+                desc = args.get("comment") or args.get("description")
+                md += f"🧠 **설명:** {desc}\n\n"
+
+            md += "---\n\n"
+        return md
+
+    elif "arguments" in parsed_json:
+        args = parsed_json["arguments"]
+        md += "### 🧩 Tool 결과\n"
+        if "columnStats" in args:
+            md += "| 컬럼 | 타입 | 결측치 | 고유값 |\n|------|------|--------|--------|\n"
+            for c in args["columnStats"]:
+                md += f"| {c.get('column','-')} | {c.get('dtype','-')} | {c.get('missing',0)} | {c.get('unique','-')} |\n"
+            md += "\n"
+        if "summary" in args:
+            md += f"🧠 **설명:** {args['summary']}\n\n"
+        return md
+    else:
+        return f"```json\n{json.dumps(parsed_json, indent=2, ensure_ascii=False)}\n```"
 
 
 def _norm(p: str) -> str:
@@ -505,9 +595,11 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
             "corr": {"headers": [], "rows": []},
+            "chat_history": chat_history,
         })
     file_path = Path(session_files[sessionId])
     filename = file_path.name
+    chat_history = chat_histories.get(sessionId, [])
     print(file_path, filename)
 
     if not file_path.exists():
@@ -519,6 +611,7 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "workflow": None, "steps": [], "head_columns": [], "head_rows": [],
             "describe_columns": [], "describe_rows": [],
             "corr": {"headers": [], "rows": []},
+            "chat_history": chat_history,
         })
 
     # 워크플로우 실행
@@ -535,6 +628,7 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
                 "generated_files": generated_files, "preview_images": preview_images, "workflow": None, "steps": [],
                 "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr,
                 "corr": {"headers": [], "rows": []},
+                "chat_history": chat_history,
             })
 
         # JSON 파싱 → 카드 데이터 구성
@@ -595,6 +689,7 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "generated_files": generated_files, "preview_images": preview_images,
             "workflow": workflow_mapped, "steps": steps,
             "head_columns": hc, "head_rows": hr, "describe_columns": dc, "describe_rows": dr, "corr": corr,
+            "chat_history": chat_history,
         })
 
     except subprocess.TimeoutExpired:
@@ -607,55 +702,84 @@ async def run_workflow(request: Request, sessionId: str = Form(None), filename: 
             "workflow": None, "steps": [], "head_columns": hc, "head_rows": hr,
             "describe_columns": dc, "describe_rows": dr,
             "corr": {"headers": [], "rows": []},
+            "chat_history": chat_history,
         })
 # ------------------------------
 # 채팅
 # ------------------------------
 @app.post("/chat/", response_class=HTMLResponse)
 async def chat(request: Request, message: str = Form(...), sessionId: str = Form(None), filename: str = Form(None)):
+    form = await request.form()
+    print("[/chat] form received:", dict(form))  # ← 콘솔에 찍힘
     if sessionId not in session_files:
         reply = "⚠️ 파일이 유효하지 않습니다. CSV를 먼저 업로드해주세요."
         return templates.TemplateResponse("index.html", {"request": request, "reply": reply})
 
     file_path = Path(session_files[sessionId])
     filename = file_path.name
-
     chat_history = chat_histories.get(sessionId, [])
     chat_history.append({"role": "user", "content": message})
-
+    before_time = time.time()
     try:
-        # ⬇️ 여기: --mode=chat + CONTEXT (파일경로, 세션키)
-        cmd = [NPX, "ts-node", "src/main.ts", "--mode=chat", message, file_path, sessionId]
+        cmd = [NPX, "ts-node", "src/main.ts", "--mode=chat", message, str(file_path), sessionId]
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            shell=False,                 # 권장
+            shell=False,
             text=True,
             encoding="utf-8",
             errors="replace",
             cwd=str(PROJECT_ROOT),
         )
         stdout, stderr = proc.communicate(timeout=600)
-        output_str = stdout.strip()
+        output_str = sanitize_stdout(stdout)
 
-        parsed_json = coerce_to_json(output_str)
-        if parsed_json and "answers" in parsed_json:
-            chat_history.append({"role": "bot", "content": "👉 아래 단계별 카드에서 분석 결과를 확인하세요."})
-        else:
-            chat_history.append({"role": "bot", "content": output_str})
+        # ✅ 텍스트 + JSON 분리
+        text_part, parsed_json = extract_json_and_text(output_str)
 
-        chat_histories[filename] = chat_history
+        # ✅ Markdown 생성
+        md_output = ""
+        if text_part:
+            md_output += text_part + "\n\n"
+        if parsed_json:
+            md_output += format_tool_output(parsed_json, sessionId)
+
+        # ✅ 이미지/파일 링크 추가
+        generated_files = list_generated_files(sessionId)
+        new_files = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".csv", ".json", ".txt", ".html", ".md"}
+                    and Path(OUTPUT_DIR / sessionId / f["name"]).stat().st_mtime > before_time]
+        preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
+        if new_files:
+            md_output += "\n\n### 📂 새로 생성된 파일\n"
+            for f in new_files:
+                rel = f"/outputs/{sessionId}/{f['name']}"
+                if f["ext"] in [".png", ".jpg", ".jpeg", ".gif", ".webp"]:
+                    md_output += f'<a href="{rel}" target="_blank"><img src="{rel}" style="max-width:220px;height:auto;border-radius:8px;margin:6px;"></a>\n'
+                else:
+                    md_output += f"- [{f['name']}]({rel})\n"
+
+        # generated_files = list_generated_files(sessionId)
+        # preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
+        # other_files = [f for f in generated_files if f["ext"] in {".csv", ".json", ".txt", ".html", ".md"}]
+        # if preview_images or other_files:
+        #     md_output += "\n\n### 📂 시각화/결과 파일\n"
+        #     for img in preview_images:
+        #         rel = f"/outputs/{sessionId}/{img['name']}"
+        #         md_output += f'<a href="{rel}" target="_blank"><img src="{rel}" alt="{img["name"]}" style="max-width:100%;height:auto;border-radius:8px;"/></a>\n'
+        #     for f in other_files:
+        #         rel = f"/outputs/{sessionId}/{f['name']}"
+        #         md_output += f"- [{f['name']}]({rel})\n"
+
+        chat_history.append({"role": "bot", "content": md_output})
+        chat_histories[sessionId] = chat_history
 
         head_columns, head_rows, describe_columns, describe_rows = get_csv_preview(file_path)
-        generated_files = list_generated_files(sessionId)
-        preview_images = [f for f in generated_files if f["ext"] in {".png", ".jpg", ".jpeg", ".gif", ".webp"}]
-
         return templates.TemplateResponse("index.html", {
             "request": request,
             "chat_history": chat_history,
             "current_filename": filename,
-            "current_session" : sessionId,
+            "current_session": sessionId,
             "head_columns": head_columns,
             "head_rows": head_rows,
             "describe_columns": describe_columns,
@@ -668,7 +792,7 @@ async def chat(request: Request, message: str = Form(...), sessionId: str = Form
     except subprocess.TimeoutExpired:
         reply = "⚠️ 응답 시간 초과"
         chat_history.append({"role": "bot", "content": reply})
-        chat_histories[filename] = chat_history
+        chat_histories[sessionId] = chat_history
         return templates.TemplateResponse("index.html", {
             "request": request,
             "chat_history": chat_history,
